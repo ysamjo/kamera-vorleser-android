@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    <color name="navy">#0B173A</color>
+    <color name="navy_ink">#172550</color>
+    <color name="navy_light">#344A7E</color>
+    <color name="blue">#3267DF</color>
+    <color name="blue_bright">#4E85FF</color>
+    <color name="sky">#77DFFF</color>
+    <color name="gold">#FFD447</color>
+    <color name="gold_dark">#F4B72E</color>
+    <color name="cream">#FFF8DF</color>
+    <color name="leaf">#55E590</color>
+    <color name="coral">#FF6671</color>
+    <color name="green">#55E590</color>
+    <color name="dark_panel">#EB0B173A</color>
+    <color name="red">#FF6671</color>
+</resources>
