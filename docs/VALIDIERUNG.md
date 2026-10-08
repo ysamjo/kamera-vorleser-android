@@ -74,3 +74,7 @@ Sprachqualitätsstand: Debug-Build, Lint und alle 11 JUnit-Tests erfolgreich.
 Erster CI-Lauf scheiterte vor Gradle: setup-android verlangte das entfernte SDK-
 Paket `tools`. Pakete nun explizit auf `platform-tools` begrenzt; SDK 36 und
 Build-Tools werden danach gezielt installiert.
+
+Zweiter CI-Befund: `gradle-daemon-jvm.properties` erzwang JetBrains-JDK und tote
+Download-URLs. Die Datei verlangt jetzt herstellerneutral JDK 21; lokal und in
+CI wird das vorhandene JDK verwendet. Lokaler Build/Lint/11 Tests bestanden.
