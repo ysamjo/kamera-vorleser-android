@@ -148,7 +148,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private int pendingStoryHits = 0;
     private long pendingStorySeenAt = 0L;
     private float speechRate = 1.15f;
-    private Map<String, String> pronunciationDict;
     private String cachedSpeaker = "";
     private float cachedPitch = 1.0f;
     private float cachedRate = 1.0f;
@@ -239,7 +238,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         cameraExecutor = Executors.newSingleThreadExecutor();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         textToSpeech = new TextToSpeech(this, this);
-        pronunciationDict = createPronunciationDictionary();
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
 
         // Load per-speaker rates from SharedPreferences
@@ -248,6 +246,14 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         // Load sound preference
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         soundsEnabled = prefs.getBoolean(KEY_SOUNDS_ENABLED, true);
+        speechRate = prefs.getFloat("speechRate", 1.15f);
+        volume = prefs.getFloat("volume", 0.8f);
+        if (Float.isNaN(speechRate) || Float.isInfinite(speechRate)) speechRate = 1.15f;
+        if (Float.isNaN(volume) || Float.isInfinite(volume)) volume = 0.8f;
+        speechRate = Math.max(0.75f, Math.min(1.75f, speechRate));
+        volume = Math.max(0f, Math.min(1f, volume));
+        speedSeekBar.setProgress(Math.round((speechRate - 0.75f) * 100));
+        volumeSeekBar.setProgress(Math.round(volume * 100));
 
         // Initialize tone generator for audio feedback
         toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, 50);
@@ -290,6 +296,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 // Calculate new global speech rate
                 float oldGlobalRate = speechRate;
                 speechRate = 0.75f + (progress / 100f);
+                prefs.edit().putFloat("speechRate", speechRate).apply();
 
                 // Global multiplier: adjust ALL cached speaker rates proportionally
                 if (oldGlobalRate > 0 && !speakerRates.isEmpty()) {
@@ -309,7 +316,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         volumeSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) return;
                 volume = progress / 100f;
+                prefs.edit().putFloat("volume", volume).apply();
             }
 
             @Override public void onStartTrackingTouch(SeekBar seekBar) { }
@@ -335,7 +344,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         int languageResult = textToSpeech.setLanguage(Locale.GERMANY);
         ttsReady = languageResult != TextToSpeech.LANG_MISSING_DATA
                 && languageResult != TextToSpeech.LANG_NOT_SUPPORTED;
-        if (ttsReady) loadGermanVoices();
+        if (ttsReady) {
+            loadGermanVoices();
+            ttsReady = !germanVoices.isEmpty()
+                    && textToSpeech.setVoice(germanVoices.get(0)) == TextToSpeech.SUCCESS;
+        }
         textToSpeech.setSpeechRate(speechRate);
         textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
             @Override public void onStart(String id) {
@@ -350,7 +363,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             @Override public void onStop(String id, boolean interrupted) { finishSpeech(id, true); }
         });
 
-        if (!ttsReady) showStatus("Deutsche Stimme fehlt", false);
+        if (!ttsReady) showStatus("Deutsche Offline-Stimme fehlt – bitte in Android installieren", false);
     }
 
     private void stopSpeech() {
@@ -631,7 +644,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         String limited = text.length() > 900 ? text.substring(0, 900) : text;
 
         // Aussprache-Wörterbuch anwenden
-        String corrected = applyPronunciation(limited);
+        String corrected = PronunciationDictionary.apply(limited);
 
         // Emotionale Variation basierend auf Satzzeichen
         float emotionPitchMod = 1.0f;
@@ -647,9 +660,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
 
         // Natürliche Pausen einfügen
-        String withPauses = addNaturalPauses(corrected);
+        String withPauses = PronunciationDictionary.addNaturalPauses(corrected);
 
         applyVoiceForSpeaker(speaker, emotionPitchMod, emotionRateMod);
+        if (!ttsReady) return false;
 
         // Audio-Feedback bei neuem Text
         playNewTextSound();
@@ -942,7 +956,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (textToSpeech.getVoices() == null) return;
         for (Voice voice : textToSpeech.getVoices()) {
             Locale locale = voice.getLocale();
-            if (locale == null || !"de".equals(locale.getLanguage())) continue;
+            if (locale == null || !"de".equals(locale.getLanguage())
+                    || voice.isNetworkConnectionRequired()
+                    || (voice.getFeatures() != null && voice.getFeatures().contains(
+                            TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED))) continue;
             allGerman.add(voice);
         }
         allGerman.sort(Comparator
@@ -977,9 +994,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (needsUpdate) {
             if (!germanVoices.isEmpty()) {
                 int voiceIndex = Math.floorMod(profile.voiceSlot, germanVoices.size());
-                textToSpeech.setVoice(germanVoices.get(voiceIndex));
-            } else {
-                textToSpeech.setLanguage(Locale.GERMANY);
+                if (textToSpeech.setVoice(germanVoices.get(voiceIndex)) != TextToSpeech.SUCCESS) {
+                    ttsReady = false;
+                    showStatus("Offline-Stimme konnte nicht geladen werden", false);
+                    return;
+                }
             }
 
             textToSpeech.setPitch(targetPitch);
@@ -1250,92 +1269,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         return value.toLowerCase(Locale.GERMAN)
                 .replaceAll("[^\\p{L}\\p{N}]+", " ")
                 .trim();
-    }
-
-    private Map<String, String> createPronunciationDictionary() {
-        Map<String, String> dict = new LinkedHashMap<>();
-
-        // Basis-Begriffe
-        dict.put("pokémon", "Pokemohn");
-        dict.put("pokemon", "Pokemohn");
-        dict.put("pokéball", "Pokeball");
-        dict.put("pokeball", "Pokeball");
-        dict.put("pokédex", "Pokedex");
-        dict.put("pokedex", "Pokedex");
-        dict.put("pokopia", "Pokohpia");
-
-        // Starter Pokémon
-        dict.put("bisasam", "Biesasam");
-        dict.put("bisaknosp", "Biesaknosp");
-        dict.put("bisaflor", "Biesaflor");
-        dict.put("glumanda", "Glumannda");
-        dict.put("glutexo", "Glutäxo");
-        dict.put("glurak", "Glurahk");
-        dict.put("schiggy", "Schiggie");
-        dict.put("schillok", "Schillokk");
-        dict.put("turtok", "Turtokk");
-        dict.put("pikachu", "Piekatschu");
-        dict.put("raichu", "Raichu");
-        dict.put("pichu", "Piechu");
-
-        // Häufige Pokémon
-        dict.put("evoli", "Ewoli");
-        dict.put("evoli", "Ewoli");
-        dict.put("aquana", "Akwana");
-        dict.put("blitza", "Blittsa");
-        dict.put("flamara", "Flamara");
-        dict.put("psiana", "Psieana");
-        dict.put("nachtara", "Nachtara");
-        dict.put("folipurba", "Folipurba");
-        dict.put("glaziola", "Glatsieola");
-        dict.put("feelinara", "Feelienara");
-        dict.put("mewtu", "Mjutu");
-        dict.put("mew", "Mju");
-        dict.put("relaxo", "Rälaxo");
-        dict.put("mooslaxo", "Mohslaxo");
-        dict.put("dragoran", "Dragohran");
-        dict.put("gengar", "Gängar");
-        dict.put("glurak", "Glurahk");
-
-        // Legendäre
-        dict.put("arktos", "Arktohs");
-        dict.put("zapdos", "Zapdohs");
-        dict.put("lavados", "Lavadohs");
-        dict.put("lugia", "Lugia");
-        dict.put("ho-oh", "Ho Oh");
-        dict.put("celebi", "Tselebi");
-        dict.put("groudon", "Graudon");
-        dict.put("kyogre", "Kaiogre");
-        dict.put("rayquaza", "Räkwasa");
-        dict.put("dialga", "Diealga");
-        dict.put("palkia", "Palkia");
-        dict.put("giratina", "Gieratina");
-
-        // Figuren
-        dict.put("tangoloss", "Tangoloss");
-        dict.put("rotom", "Rohtom");
-        dict.put("porygon", "Poriegon");
-
-        return dict;
-    }
-
-    private String applyPronunciation(String text) {
-        String result = text;
-        for (Map.Entry<String, String> entry : pronunciationDict.entrySet()) {
-            // Case-insensitive Ersetzung mit Wortgrenzen
-            result = result.replaceAll("(?i)\\b" + entry.getKey() + "\\b", entry.getValue());
-        }
-        return result;
-    }
-
-    private String addNaturalPauses(String text) {
-        // Kurze Pausen nach Satzzeichen einfügen (TTS versteht <break time="...ms"/>)
-        return text
-                .replaceAll("\\. ", ". ")  // Punkt: natürliche Pause
-                .replaceAll(", ", ", ")    // Komma: kürzere Pause
-                .replaceAll("; ", "; ")    // Semikolon: mittlere Pause
-                .replaceAll(" - ", " – ")  // Gedankenstrich: Pause
-                .replaceAll("\\.\\.\\.", "…"); // Drei Punkte
     }
 
     private void forgetOldLines(long now) {

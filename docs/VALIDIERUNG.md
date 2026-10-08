@@ -56,3 +56,17 @@ SDK 36, Wrapper 9.5.0, Debug-Build/Lint/JUnit; Berichte und APK als Artefakte.
 Lokale .DS_Store-/Drive-Backup-Dateien aus Git entfernt und ignoriert.
 Release-Minifizierung bleibt unverändert. Lokales Sicherungs-ZIP vor der
 Extraktion: `Archiv/KameraVorleser_v1.2_vor_stabilisierung.zip` (Basis 3ad0ea9).
+
+## Sprachqualität und Einstellungen (KAV-10/11/13, teilweise KAV-12)
+
+Netzwerkstimmen und als nicht installiert markierte Stimmen werden ausgeschlossen.
+Vorhandene Qualität-/Namenssortierung bleibt deterministisch; fehlende Offline-
+Stimme führt zu einem Installationshinweis. Pitch-/Rate-Profile bleiben unverändert.
+Das Wörterbuch ist extrahiert, doppelte Schlüssel entfernt, Regex-Schlüssel und
+Ersetzungen sicher maskiert; Unicode-Wortgrenzen schützen fremde Wörter.
+Wirkungslose Pausenersetzungen entfernt. Drei Tests prüfen Namen, Wortgrenzen und
+Satzzeichen. Tempo/Lautstärke werden gespeichert und initial mit Reglern abgeglichen.
+Akustische Qualität und Flugmodus-Test offen; vollständige Accessibility-/
+String-Ressourcen-Überarbeitung und Story-Zonen-Persistenz nicht umgesetzt.
+
+Sprachqualitätsstand: Debug-Build, Lint und alle 11 JUnit-Tests erfolgreich.

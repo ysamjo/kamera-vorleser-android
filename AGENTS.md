@@ -21,3 +21,6 @@ Schwellen, Sprecherprofile und Bediensemantik nur mit gezieltem Regressionstest 
 CI: `.github/workflows/android.yml` führt dieselben Prüfungen unter Linux/JDK 21
 aus. Keine Lint-Baseline verwenden, um neue Fehler zu verstecken. Lokale Archive
 liegen unter `Archiv/` und bleiben außerhalb von Git.
+
+`PronunciationDictionary` ist reine Textlogik mit Unicode-Wortgrenzen. Nur lokale,
+installierte deutsche TTS-Stimmen verwenden; kein Netzwerkfallback.

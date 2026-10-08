@@ -20,9 +20,9 @@ Die App bleibt vollständig still, solange im eingegrenzten Storybereich oder au
 
 Neben dem erkannten Namen zeigt die App das verwendete Stimmenprofil an, etwa „TIEF“ oder „HELL“. Bekannte Figuren haben feste Profile; auch neue Figuren erhalten anhand ihres Namens dauerhaft eine eigene, deutlich gespreizte Tonlage und Geschwindigkeit.
 
-Ein lokales Aussprache-Wörterbuch korrigiert wichtige Begriffe nur für die Sprachausgabe, darunter Pokémon, Pokopia, Pokéball, Pokédex sowie zentrale Pokémon- und Figurennamen. In der erkannten Textanzeige bleibt immer die originale Schreibweise sichtbar. Das Wörterbuch liegt direkt in `MainActivity.java` unter `createPronunciationDictionary()` und kann leicht ergänzt werden.
+Ein lokales Aussprache-Wörterbuch korrigiert wichtige Begriffe nur für die Sprachausgabe, darunter Pokémon, Pokopia, Pokéball, Pokédex sowie zentrale Pokémon- und Figurennamen. In der erkannten Textanzeige bleibt immer die originale Schreibweise sichtbar. Das Wörterbuch liegt direkt in `PronunciationDictionary.java` und kann leicht ergänzt werden.
 
-Der Name auf dem Schild oberhalb der Dialogbox wird nur intern als Sprecherkennung genutzt. Der Name selbst wird nicht gesprochen; namenlose Texte erhalten eine neutrale Erzählerstimme. Die Stimmen sind passend zu Pokémon-Gruppen kuratiert: kleine Pokémon klingen heller und lebhafter, große oder felsige Pokémon tiefer, Mooslaxo langsam und weich, Rotom/Porygon technisch, Geist-Pokémon dunkler und legendäre Pokémon ruhig-autoritär. Professor Tangoloss besitzt ein eigenes warmes, tiefes Profil. Unbekannte Figuren erhalten eine neutrale Stimme statt eines zufälligen Effekts. Es werden keine urheberrechtlich geschützten Original-Pokémon-Stimmen mitgeliefert.
+Der Name auf dem Schild oberhalb der Dialogbox wird nur intern als Sprecherkennung genutzt. Der Name selbst wird nicht gesprochen; namenlose Texte erhalten eine neutrale Erzählerstimme. Die Stimmen sind passend zu Pokémon-Gruppen kuratiert: kleine Pokémon klingen heller und lebhafter, große oder felsige Pokémon tiefer, Mooslaxo langsam und weich, Rotom/Porygon technisch, Geist-Pokémon dunkler und legendäre Pokémon ruhig-autoritär. Professor Tangoloss besitzt ein eigenes warmes, tiefes Profil. Unbekannte Figuren erhalten ein aus ihrem Namen deterministisch abgeleitetes Profil. Es werden keine urheberrechtlich geschützten Original-Pokémon-Stimmen mitgeliefert.
 
 Das OCR-Modell ist in der App enthalten und funktioniert ohne Internet. Die App hält den Bildschirm wach und arbeitet, solange sie sichtbar im Vordergrund läuft. Bereits gelesene oder nahezu identische Zeilen werden kurzzeitig übersprungen, damit stehender Text nicht dauernd wiederholt wird.
 
@@ -46,3 +46,10 @@ werden erneut versuchbar; Pause und Hintergrundwechsel stoppen die Sprache.
 GitHub Actions prüft jeden Push auf `main` und jeden Pull Request mit JDK 21,
 Debug-Build, Android Lint und JUnit. Prüfberichte und Debug-APK werden als
 Workflow-Artefakte bereitgestellt.
+
+Es werden ausschließlich installierte deutsche Offline-Stimmen ausgewählt, stabil
+nach Qualität und Namen sortiert. Fehlt eine solche Stimme, zeigt die App einen
+Hinweis zur Installation in den Android-TTS-Einstellungen; ein Netzwerkfallback
+findet nicht statt. Die Offline-Stimme muss vor der Nutzung installiert sein.
+Tempo und Lautstärke werden wie die Sound-Einstellung über Neustarts gespeichert.
+Der Tempo-Regler zeigt beim ersten Start den tatsächlichen Wert 1,15 an.
