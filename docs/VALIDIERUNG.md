@@ -104,3 +104,23 @@ frei, damit kein Queue-Platz dauerhaft blockiert bleibt. Lint derzeit 0 Fehler,
 
 Der zusätzliche Queue-Test simuliert Ablehnung und synchrone Engine-Exception
 neben einer bestehenden Ausgabe. Alle 15 Unit-Tests, Lint und beide APK-Builds bestanden.
+
+## Abschließendes Ergebnis
+
+Code-Stand: `7a94ada`, alle Implementierungscommits auf `main` gepusht.
+[GitHub-Actions-Lauf 37814138924](https://github.com/ysamjo/kamera-vorleser-android/actions/runs/37814138924)
+**erfolgreich**: Linux/JDK 21, Debug-APK, Android Lint, 15 JUnit-Tests und
+Instrumentation-APK-Build. Berichte und Debug-APK sind dort als Artefakte abrufbar.
+CI führt die Instrumentation ohne Android-Gerät nicht aus.
+
+Die abschließende App- und Test-APK sind auf dem Pixel 10 Pro installiert.
+OCR-Geräte-Smoke-Test bestanden; entsperrte Lifecycle-/Reglertests bleiben offen,
+da während dieser Sitzung keine Entsperrbestätigung vorlag. API-23/26/30-Matrix,
+reale Pokopia-Kameradialoge, akustische Qualität und Flugmodus-Hörtest bleiben offen.
+
+CI-Wartungshinweise ohne Buildfehler: verwendete Actions melden Node-20-/
+setup-java-v4-Abkündigungen; der Runner führt sie erfolgreich unter Node 24 aus.
+Ein Wechsel der Action-Hauptversionen wurde nicht mit den Stabilitätsfixes vermischt.
+
+Technische Referenzen: [Java-API-Desugaring](https://developer.android.com/studio/write/java8-support),
+[VibrationEffect ab API 26](https://developer.android.com/reference/android/os/VibrationEffect).
