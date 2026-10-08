@@ -674,20 +674,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             }
         }
 
-        String utteranceId = speechQueue.add(dialogueKey);
-
         // Lautstärke über Bundle setzen
         Bundle params = new Bundle();
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume);
 
-        int result = textToSpeech.speak(
-                withPauses,
-                TextToSpeech.QUEUE_ADD,
-                params,
-                utteranceId
-        );
-        if (result == TextToSpeech.ERROR) {
-            speechQueue.finish(utteranceId);
+        boolean accepted = speechQueue.submit(dialogueKey, id -> textToSpeech.speak(
+                withPauses, TextToSpeech.QUEUE_ADD, params, id) == TextToSpeech.SUCCESS);
+        if (!accepted) {
             showStatus("Sprachausgabe fehlgeschlagen – versuche erneut", false);
             return false;
         }

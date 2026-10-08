@@ -2,6 +2,17 @@ package de.stegmann.kameravorleser;
 import org.junit.Test;
 import static org.junit.Assert.*;
 public class SpeechQueueTest {
+    @Test public void synchronousRejectionAndExceptionFreeOnlyTheirOwnSlot() {
+        SpeechQueue queue = new SpeechQueue();
+        String active = queue.add("aktiv");
+        assertFalse(queue.submit("abgelehnt", id -> false));
+        assertFalse(queue.submit("fehler", id -> { throw new IllegalStateException("Engine ausgefallen"); }));
+        assertEquals(1, queue.size());
+        assertTrue(queue.contains(active));
+        assertTrue(queue.submit("angenommen", id -> true));
+        assertEquals(2, queue.size());
+    }
+
     @Test public void lateCallbacksCannotConsumeNewSpeechAfterStop() {
         SpeechQueue queue = new SpeechQueue();
         String old = queue.add("alt");

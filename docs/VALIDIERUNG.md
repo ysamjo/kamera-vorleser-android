@@ -83,7 +83,7 @@ CI wird das vorhandene JDK verwendet. Lokaler Build/Lint/11 Tests bestanden.
 `TextRules` extrahiert Normalisierung, Levenshtein, Ähnlichkeit, Aktions- und
 Benachrichtigungsfilter ohne Änderung ihrer Schwellen. 34 synthetische Textfälle
 (16 Dialoge, 12 Aktionshinweise, 6 Meldungen) und Grenzfalltests ergänzt.
-Insgesamt 14 JUnit-Testmethoden erfolgreich. Debug-APK, Test-APK und Lint bestanden.
+Insgesamt 15 JUnit-Testmethoden erfolgreich. Debug-APK, Test-APK und Lint bestanden.
 Diese Fälle sind keine repräsentativen Pokopia-OCR-Fixtures mit Bounding-Boxes.
 
 Pixel 10 Pro, per WLAN-ADB, gemeldete API 37: App und Instrumentation installiert.
@@ -97,3 +97,10 @@ Zwei erste Lifecycle-/Einstellungstests scheiterten an der Gerätesperre
 jetzt vorab und melden ihn als übersprungen. Erfolgreicher entsperrter Lauf noch offen.
 Kein bestandenes Lifecycle-Testergebnis aus dem OCR-Test oder Build ableiten.
 CI kompiliert auch die Instrumentation; sie führt diese ohne Gerät nicht aus.
+
+Abschlussprüfung: Auch synchrone Exceptions der TTS-Engine geben ihre Ausgabe-ID
+frei, damit kein Queue-Platz dauerhaft blockiert bleibt. Lint derzeit 0 Fehler,
+53 Warnungen (u. a. vorhandene Layout-/Übersetzungs-/Versionshinweise).
+
+Der zusätzliche Queue-Test simuliert Ablehnung und synchrone Engine-Exception
+neben einer bestehenden Ausgabe. Alle 15 Unit-Tests, Lint und beide APK-Builds bestanden.

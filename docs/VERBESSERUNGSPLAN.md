@@ -9,7 +9,7 @@
 
 KAV-01–04 technisch umgesetzt; Geräte-Matrix und reale Fehler-/Recovery-Szenarien
 noch offen. KAV-06 implementiert und Queue-Logik getestet. KAV-10/11 sowie KAV-13
-teilweise umgesetzt. KAV-12/14: reine Komponenten, 14 Unit-Tests und drei
+teilweise umgesetzt. KAV-12/14: reine Komponenten, 15 Unit-Tests und drei
 Instrumentation-Tests. KAV-15: CI eingerichtet, Remote-Validierung siehe Protokoll.
 Häkchen kennzeichnen den jeweiligen Umsetzungsschritt, nicht die vollständige
 Geräteakzeptanz der Aufgabe. Alle Grenzen stehen in [VALIDIERUNG.md](VALIDIERUNG.md).
