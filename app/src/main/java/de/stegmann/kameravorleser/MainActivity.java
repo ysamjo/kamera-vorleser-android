@@ -58,7 +58,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -131,7 +130,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private Camera camera;
 
     private final AtomicBoolean ocrBusy = new AtomicBoolean(false);
-    private final AtomicInteger queuedUtterances = new AtomicInteger(0);
+    private final SpeechQueue speechQueue = new SpeechQueue();
     private final Map<String, Long> spokenLines = new LinkedHashMap<>();
     private final List<Voice> germanVoices = new ArrayList<>();
     private ExecutorService cameraExecutor;
@@ -266,8 +265,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             pauseButton.setText(paused ? "WEITER" : "PAUSE");
             pauseButton.setIconResource(paused ? R.drawable.ic_play : R.drawable.ic_pause);
             if (paused) {
-                textToSpeech.stop();
-                queuedUtterances.set(0);
+                stopSpeech();
                 showStatus("Pausiert", false);
             } else {
                 showStatus("Suche Text …", true);
@@ -280,8 +278,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             lastSpokenVisible = "";
             lastSpokenNormalized = "";
             lastSpokenAt = 0L;
-            textToSpeech.stop();
-            queuedUtterances.set(0);
+            stopSpeech();
             showStatus("Text kann erneut gelesen werden", true);
         });
 
@@ -341,23 +338,43 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (ttsReady) loadGermanVoices();
         textToSpeech.setSpeechRate(speechRate);
         textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-            @Override public void onStart(String utteranceId) {
-                runOnUiThread(() -> showStatus("Lese vor …", true));
-            }
-
-            @Override public void onDone(String utteranceId) {
-                queuedUtterances.updateAndGet(value -> Math.max(0, value - 1));
+            @Override public void onStart(String id) {
                 runOnUiThread(() -> {
-                    if (!paused && queuedUtterances.get() == 0) showStatus("Suche Text …", true);
+                    if (!destroyed && foreground && !paused && speechQueue.contains(id)) {
+                        showStatus("Lese vor …", true);
+                    }
                 });
             }
-
-            @Override public void onError(String utteranceId) {
-                queuedUtterances.updateAndGet(value -> Math.max(0, value - 1));
-            }
+            @Override public void onDone(String id) { finishSpeech(id, false); }
+            @Override public void onError(String id) { finishSpeech(id, true); }
+            @Override public void onStop(String id, boolean interrupted) { finishSpeech(id, true); }
         });
 
         if (!ttsReady) showStatus("Deutsche Stimme fehlt", false);
+    }
+
+    private void stopSpeech() {
+        // Vor stop() entwerten: Engines dürfen sofort oder später zurückrufen.
+        speechQueue.clear();
+        if (textToSpeech != null) textToSpeech.stop();
+    }
+
+    private void finishSpeech(String id, boolean failed) {
+        runOnUiThread(() -> {
+            String key = speechQueue.finish(id);
+            if (key == null || destroyed) return;
+            if (failed) {
+                spokenLines.remove(key);
+                if (key.equals(lastSpokenNormalized)) {
+                    lastSpokenVisible = "";
+                    lastSpokenNormalized = "";
+                    lastSpokenAt = 0L;
+                }
+            }
+            if (foreground && !paused && speechQueue.size() == 0) {
+                showStatus(failed ? "Sprachausgabe fehlgeschlagen – versuche erneut" : "Suche Text …", !failed);
+            }
+        });
     }
 
     private void startCamera() {
@@ -564,23 +581,22 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 && normalizedStory.length() > lastSpokenNormalized.length() + 3;
 
         if (isExtension) {
-            boolean ttsSpeaking = textToSpeech.isSpeaking() || queuedUtterances.get() > 0;
+            boolean ttsSpeaking = speechQueue.size() > 0;
             if (ttsSpeaking) {
                 // Vorheriges unvollständiges Vorlesen abbrechen und vollen, runden Gesamtsatz sprechen
-                textToSpeech.stop();
-                queuedUtterances.set(0);
-                speak(visibleStory, currentSpeaker);
+                stopSpeech();
+                if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
             } else {
                 String trimmedLast = lastSpokenVisible != null ? lastSpokenVisible.trim() : "";
                 char lastChar = !trimmedLast.isEmpty() ? trimmedLast.charAt(trimmedLast.length() - 1) : ' ';
                 if (lastChar == '.' || lastChar == '!' || lastChar == '?' || lastChar == '…' || lastChar == ':') {
                     String suffix = extractExtensionSuffix(visibleStory, lastSpokenVisible);
                     if (!suffix.isBlank()) {
-                        speak(suffix, currentSpeaker);
+                        if (!speak(suffix, currentSpeaker, normalizedStory)) return;
                     }
                 } else {
                     // Satz war unvollständig getrennt -> vollen Satz flüssig sprechen
-                    speak(visibleStory, currentSpeaker);
+                    if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
                 }
             }
             lastSpokenVisible = visibleStory;
@@ -599,8 +615,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
 
         // Neuen Dialog vollständig und flüssig sprechen
-        if (ttsReady && queuedUtterances.get() < MAX_QUEUED_UTTERANCES) {
-            speak(visibleStory, currentSpeaker);
+        if (ttsReady && speechQueue.size() < MAX_QUEUED_UTTERANCES) {
+            if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
             lastSpokenVisible = visibleStory;
             lastSpokenNormalized = normalizedStory;
             lastSpokenAt = now;
@@ -610,8 +626,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         trimMemory();
     }
 
-    private void speak(String text, String speaker) {
-        if (!ttsReady || paused) return;
+    private boolean speak(String text, String speaker, String dialogueKey) {
+        if (!ttsReady || paused || !foreground || destroyed) return false;
         String limited = text.length() > 900 ? text.substring(0, 900) : text;
 
         // Aussprache-Wörterbuch anwenden
@@ -647,7 +663,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             }
         }
 
-        queuedUtterances.incrementAndGet();
+        String utteranceId = speechQueue.add(dialogueKey);
 
         // Lautstärke über Bundle setzen
         Bundle params = new Bundle();
@@ -657,9 +673,14 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 withPauses,
                 TextToSpeech.QUEUE_ADD,
                 params,
-                UUID.randomUUID().toString()
+                utteranceId
         );
-        if (result == TextToSpeech.ERROR) queuedUtterances.decrementAndGet();
+        if (result == TextToSpeech.ERROR) {
+            speechQueue.finish(utteranceId);
+            showStatus("Sprachausgabe fehlgeschlagen – versuche erneut", false);
+            return false;
+        }
+        return true;
     }
 
     private String detectSpeaker(
@@ -1413,8 +1434,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     protected void onPause() {
         foreground = false;
         invalidateAnalysis();
-        if (textToSpeech != null) textToSpeech.stop();
-        queuedUtterances.set(0);
+        stopSpeech();
         super.onPause();
     }
 
@@ -1474,7 +1494,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         invalidateAnalysis();
         super.onDestroy();
         if (textToSpeech != null) {
-            textToSpeech.stop();
+            stopSpeech();
             textToSpeech.shutdown();
         }
         if (textRecognizer != null && !ocrBusy.get()) textRecognizer.close();

@@ -38,3 +38,7 @@ OCR-Ergebnisse werden bei Pause, erneutem Lesen und Hintergrundwechsel verworfen
 ein laufendes Bild bleibt bis zum Abschluss offen und wird genau einmal freigegeben.
 
 Umsetzungsstand und Geräte-Testlücken: [Validierung](docs/VALIDIERUNG.md).
+
+Die TTS-Warteschlange verfolgt eindeutige Ausgabe-IDs. Verspätete Rückmeldungen
+abgebrochener Ausgaben beeinflussen neue Ausgaben nicht. Fehlerhafte Ausgaben
+werden erneut versuchbar; Pause und Hintergrundwechsel stoppen die Sprache.

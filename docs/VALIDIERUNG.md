@@ -32,3 +32,19 @@ Instrumentation, KAV-16 Diagnoseoberfläche/Leistungsmessungen bleiben offen.
 
 Erster Stabilitätsstand: Debug-Build, Lint (0 Fehler, 50 bestehende Warnungen) und
 5 JUnit-Tests erfolgreich unter JDK 21. Keine Lint-Baseline oder Fehlersuppression.
+
+## TTS-Warteschlange (KAV-06)
+
+Eindeutige IDs ersetzen den Zähler. Sämtliche Queue-Zustände und Callbacks laufen
+auf dem Main Thread. Stop entwertet IDs vor dem Engine-Aufruf; verspätete und
+doppelte Callbacks werden ignoriert. `onStop` wird behandelt. Synchron abgelehnte
+Ausgaben werden nicht als gelesen gespeichert; asynchrone Fehler geben den
+zugehörigen Dialog für einen neuen Versuch frei.
+Policy bleibt erhalten: maximal zwei Ausgaben, neue Dialoge per QUEUE_ADD;
+Wachstum eines gerade gesprochenen Dialogs ersetzt diesen durch den Gesamttext.
+Pause/Neu lesen/Hintergrund stoppen die Queue; bereits angenommene Dialoge bleiben
+wie bisher gemerkt, bis Neu lesen oder die bestehende Gedächtnisfrist greift.
+Drei Queue-Regressionstests prüfen verspätete/doppelte Callbacks und 50 schnelle
+Abbruch-/Neustartfolgen. Echte Engine-Fehler und akustische Sprecherwechsel offen.
+
+TTS-Stand: Debug-Build, Lint und alle 8 JUnit-Tests erfolgreich.

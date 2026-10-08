@@ -6,7 +6,8 @@ Offline-OCR ist Pflicht; keine Cloud-Dienste und keine Übertragung von Bildern/
 `MainActivity` besitzt UI, Dialogzustand und TTS auf dem Main Thread. Der
 CameraX-Executor nimmt Frames an. ML-Kit-Abschluss läuft explizit auf dem Main
 Thread; Bilddaten bleiben bis zum Abschluss gültig. `FrameRelease` gibt genau
-einmal frei. `StoryTextAssembler` enthält reine Geometrie-/Textlogik.
+einmal frei. `StoryTextAssembler` enthält reine Geometrie-/Textlogik. `SpeechQueue` verfolgt
+Utterance-IDs ausschließlich auf dem Main Thread; vor TTS-Stop immer leeren.
 Schwellen, Sprecherprofile und Bediensemantik nur mit gezieltem Regressionstest ändern.
 
 ## Befehle
