@@ -42,3 +42,7 @@ Umsetzungsstand und Geräte-Testlücken: [Validierung](docs/VALIDIERUNG.md).
 Die TTS-Warteschlange verfolgt eindeutige Ausgabe-IDs. Verspätete Rückmeldungen
 abgebrochener Ausgaben beeinflussen neue Ausgaben nicht. Fehlerhafte Ausgaben
 werden erneut versuchbar; Pause und Hintergrundwechsel stoppen die Sprache.
+
+GitHub Actions prüft jeden Push auf `main` und jeden Pull Request mit JDK 21,
+Debug-Build, Android Lint und JUnit. Prüfberichte und Debug-APK werden als
+Workflow-Artefakte bereitgestellt.

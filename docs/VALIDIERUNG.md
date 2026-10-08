@@ -48,3 +48,11 @@ Drei Queue-Regressionstests prüfen verspätete/doppelte Callbacks und 50 schnel
 Abbruch-/Neustartfolgen. Echte Engine-Fehler und akustische Sprecherwechsel offen.
 
 TTS-Stand: Debug-Build, Lint und alle 8 JUnit-Tests erfolgreich.
+
+## CI und Repository-Hygiene (KAV-15)
+
+GitHub Actions: Push auf main, Pull Requests und manueller Start; JDK 21,
+SDK 36, Wrapper 9.5.0, Debug-Build/Lint/JUnit; Berichte und APK als Artefakte.
+Lokale .DS_Store-/Drive-Backup-Dateien aus Git entfernt und ignoriert.
+Release-Minifizierung bleibt unverändert. Lokales Sicherungs-ZIP vor der
+Extraktion: `Archiv/KameraVorleser_v1.2_vor_stabilisierung.zip` (Basis 3ad0ea9).

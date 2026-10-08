@@ -17,3 +17,7 @@ Schwellen, Sprecherprofile und Bediensemantik nur mit gezieltem Regressionstest 
 - Gerät prüfen: `adb devices -l`; nur auf dem ausdrücklich gewählten Testgerät installieren.
 - Vor Änderungen aktuellen Plan in `docs/VERBESSERUNGSPLAN.md` lesen.
 - Validierungsgrenzen in `docs/VALIDIERUNG.md` pflegen; Unit-Tests ersetzen keine Kamera-/TTS-Gerätetests.
+
+CI: `.github/workflows/android.yml` führt dieselben Prüfungen unter Linux/JDK 21
+aus. Keine Lint-Baseline verwenden, um neue Fehler zu verstecken. Lokale Archive
+liegen unter `Archiv/` und bleiben außerhalb von Git.
