@@ -70,3 +70,7 @@ Akustische Qualität und Flugmodus-Test offen; vollständige Accessibility-/
 String-Ressourcen-Überarbeitung und Story-Zonen-Persistenz nicht umgesetzt.
 
 Sprachqualitätsstand: Debug-Build, Lint und alle 11 JUnit-Tests erfolgreich.
+
+Erster CI-Lauf scheiterte vor Gradle: setup-android verlangte das entfernte SDK-
+Paket `tools`. Pakete nun explizit auf `platform-tools` begrenzt; SDK 36 und
+Build-Tools werden danach gezielt installiert.
