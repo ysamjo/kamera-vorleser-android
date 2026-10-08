@@ -27,8 +27,7 @@ Synthetische Unit-Tests belegen keine reale Erkennungsqualität oder Latenz.
 KAV-05 (Worker-Nachverarbeitung), KAV-07/08 (Dialog-/Sprecherzustände), KAV-09
 (ROI-Transformation/Kalibrierung) benötigen repräsentative Kamera-Fixtures und
 Gerätevergleiche vor Änderungen an Erkennungsschwellen oder Zustandssemantik.
-KAV-12 wird nur schrittweise umgesetzt. KAV-14 Referenzdatensatz und
-Instrumentation, KAV-16 Diagnoseoberfläche/Leistungsmessungen bleiben offen.
+KAV-12 wird nur schrittweise umgesetzt. KAV-14 repräsentativer Referenzdatensatz, KAV-16 Diagnoseoberfläche/Leistungsmessungen bleiben offen.
 
 Erster Stabilitätsstand: Debug-Build, Lint (0 Fehler, 50 bestehende Warnungen) und
 5 JUnit-Tests erfolgreich unter JDK 21. Keine Lint-Baseline oder Fehlersuppression.
@@ -78,3 +77,23 @@ Build-Tools werden danach gezielt installiert.
 Zweiter CI-Befund: `gradle-daemon-jvm.properties` erzwang JetBrains-JDK und tote
 Download-URLs. Die Datei verlangt jetzt herstellerneutral JDK 21; lokal und in
 CI wird das vorhandene JDK verwendet. Lokaler Build/Lint/11 Tests bestanden.
+
+## Testbasis und Gerät (KAV-12/14, Teilumsetzung)
+
+`TextRules` extrahiert Normalisierung, Levenshtein, Ähnlichkeit, Aktions- und
+Benachrichtigungsfilter ohne Änderung ihrer Schwellen. 34 synthetische Textfälle
+(16 Dialoge, 12 Aktionshinweise, 6 Meldungen) und Grenzfalltests ergänzt.
+Insgesamt 14 JUnit-Testmethoden erfolgreich. Debug-APK, Test-APK und Lint bestanden.
+Diese Fälle sind keine repräsentativen Pokopia-OCR-Fixtures mit Bounding-Boxes.
+
+Pixel 10 Pro, per WLAN-ADB, gemeldete API 37: App und Instrumentation installiert.
+`BundledOcrSmokeTest` bestanden, synthetischer deutscher Text mit gebündeltem
+ML Kit erkannt. Die INTERNET-Berechtigung wurde explizit aus dem zusammengeführten
+Manifest entfernt; damit kann die App keine eigenen Internetverbindungen öffnen.
+Das beweist weder einen Flugmodus-Hörtest noch die Offline-Fähigkeit jeder TTS-Engine.
+
+Zwei erste Lifecycle-/Einstellungstests scheiterten an der Gerätesperre
+(`RESUMED` erwartet, `STOPPED` beobachtet). Die Tests prüfen diesen Umgebungszustand
+jetzt vorab und melden ihn als übersprungen. Erfolgreicher entsperrter Lauf noch offen.
+Kein bestandenes Lifecycle-Testergebnis aus dem OCR-Test oder Build ableiten.
+CI kompiliert auch die Instrumentation; sie führt diese ohne Gerät nicht aus.

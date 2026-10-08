@@ -53,3 +53,11 @@ Hinweis zur Installation in den Android-TTS-Einstellungen; ein Netzwerkfallback
 findet nicht statt. Die Offline-Stimme muss vor der Nutzung installiert sein.
 Tempo und Lautstärke werden wie die Sound-Einstellung über Neustarts gespeichert.
 Der Tempo-Regler zeigt beim ersten Start den tatsächlichen Wert 1,15 an.
+
+Die App besitzt keine Internetberechtigung; das gebündelte OCR-Modell wurde auf
+Pixel 10 Pro (API 37) mit synthetischem Text erfolgreich ausgeführt.
+Gerätetests bauen: `./gradlew :app:assembleDebugAndroidTest`.
+Auf einem ausgewählten, entsperrten Testgerät ausführen:
+`ANDROID_SERIAL=<ADB-Gerät> ./gradlew :app:connectedDebugAndroidTest`.
+Lifecycle-Tests werden bei gesperrtem/schlafendem Gerät ausdrücklich übersprungen.
+Ein OCR-Smoke-Test ersetzt keinen realen Pokopia-Kameratest oder Hörtest.

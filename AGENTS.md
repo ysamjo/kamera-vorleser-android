@@ -24,3 +24,9 @@ liegen unter `Archiv/` und bleiben außerhalb von Git.
 
 `PronunciationDictionary` ist reine Textlogik mit Unicode-Wortgrenzen. Nur lokale,
 installierte deutsche TTS-Stimmen verwenden; kein Netzwerkfallback.
+
+`TextRules` enthält unverändert extrahierte Filter und Ähnlichkeitsschwellen.
+Instrumentation bauen: `./gradlew :app:assembleDebugAndroidTest`.
+Instrumentation ausführen: `ANDROID_SERIAL=<ADB-Gerät> ./gradlew :app:connectedDebugAndroidTest`.
+Gerät wach/entsperrt halten; übersprungene Tests ausdrücklich berichten.
+Das zusammengeführte App-Manifest darf keine INTERNET-Berechtigung enthalten.

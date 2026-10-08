@@ -5,6 +5,15 @@
 
 > Aktuelle Umsetzung und Validierungsgrenzen stehen in [VALIDIERUNG.md](VALIDIERUNG.md). Der ursprüngliche Plan folgt. Alle Befunde stammen aus einem statischen Code-Review; Laufzeitfehler und Performanceannahmen müssen auf Geräten bzw. Emulatoren verifiziert werden.
 
+## Aktueller Umsetzungsstand
+
+KAV-01–04 technisch umgesetzt; Geräte-Matrix und reale Fehler-/Recovery-Szenarien
+noch offen. KAV-06 implementiert und Queue-Logik getestet. KAV-10/11 sowie KAV-13
+teilweise umgesetzt. KAV-12/14: reine Komponenten, 14 Unit-Tests und drei
+Instrumentation-Tests. KAV-15: CI eingerichtet, Remote-Validierung siehe Protokoll.
+Häkchen kennzeichnen den jeweiligen Umsetzungsschritt, nicht die vollständige
+Geräteakzeptanz der Aufgabe. Alle Grenzen stehen in [VALIDIERUNG.md](VALIDIERUNG.md).
+
 ## Zielbild
 
 Der Vorleser soll deutsche Pokopia-Dialoge im Kamerabild **zügig, korrekt, in der richtigen Reihenfolge und nur einmal pro logischem Dialog** erkennen und mit der passenden Stimme ausgeben. Die App soll vollständig offline verwendbar bleiben und von Android-API 23 bis zur aktuellen Ziel-API zuverlässig funktionieren.
@@ -33,9 +42,9 @@ Die Aufwände sind **grobe Größenordnungen** für die Umsetzung, keine Zusage.
 
 **Fundstellen:** `app/build.gradle.kts` (`minSdk = 23`), `MainActivity.java` (u. a. `String.isBlank()`, `VibrationEffect` und Collection-APIs).
 
-- [ ] Für alle verwendeten Java-/Android-APIs den Mindest-API-Level gegen API 23 prüfen.
-- [ ] `String.isBlank()` und weitere neuere Java-APIs entweder mit geprüftem Core-Library-Desugaring absichern oder kompatibel ersetzen.
-- [ ] Für Android-APIs oberhalb API 23 versionsabhängige Implementierungen bzw. Fallbacks einbauen.
+- [x] Für alle verwendeten Java-/Android-APIs den Mindest-API-Level gegen API 23 prüfen.
+- [x] `String.isBlank()` und weitere neuere Java-APIs entweder mit geprüftem Core-Library-Desugaring absichern oder kompatibel ersetzen.
+- [x] Für Android-APIs oberhalb API 23 versionsabhängige Implementierungen bzw. Fallbacks einbauen.
 - [ ] Start, Kamera-Workflow, Pause und erneutes Vorlesen auf API 23, 26, 30 und einem aktuellen API-Level testen.
 
 **Akzeptanz:** Keine `NoSuchMethodError`-, `VerifyError`- oder API-bedingten Abstürze im Testlauf. **Hinweis:** Die tatsächliche Verfügbarkeit von `isBlank()` auf den Zielgeräten vor dem Fix verifizieren, nicht allein aus der Java-Version ableiten.
@@ -44,8 +53,8 @@ Die Aufwände sind **grobe Größenordnungen** für die Umsetzung, keine Zusage.
 
 **Fundstellen:** `AndroidManifest.xml`, `MainActivity.java:610–613`.
 
-- [ ] Fehlende normale Berechtigung `android.permission.VIBRATE` ergänzen, falls Feedback beibehalten wird.
-- [ ] `VibrationEffect` nur auf unterstützten Android-Versionen verwenden; älteren API-Level abfangen.
+- [x] Fehlende normale Berechtigung `android.permission.VIBRATE` ergänzen, falls Feedback beibehalten wird.
+- [x] `VibrationEffect` nur auf unterstützten Android-Versionen verwenden; älteren API-Level abfangen.
 - [ ] Optional Vibrationsfeedback separat schaltbar machen.
 
 **Akzeptanz:** Kein Crash wegen fehlender Berechtigung oder nicht verfügbarer Vibrations-API; Vorlesen funktioniert auch ohne Vibrationshardware.
@@ -56,9 +65,9 @@ Die Aufwände sind **grobe Größenordnungen** für die Umsetzung, keine Zusage.
 
 **Bestätigter Logikfehler:** Zeilen werden in `validLines` sortiert und zu `rows` gruppiert, aber für den fertigen Text wird erneut über die unsortierte Eingabeliste `lines` iteriert.
 
-- [ ] Zusammenbau auf Basis der sortierten `rows` implementieren.
-- [ ] Links-rechts-Reihenfolge innerhalb einer Zeile und oben-unten-Reihenfolge zwischen Zeilen erhalten.
-- [ ] Zeilenumbruch, Silbentrennung, leere OCR-Zeilen und leicht versetzte Bounding-Boxes testen.
+- [x] Zusammenbau auf Basis der sortierten `rows` implementieren.
+- [x] Links-rechts-Reihenfolge innerhalb einer Zeile und oben-unten-Reihenfolge zwischen Zeilen erhalten.
+- [x] Zeilenumbruch, Silbentrennung, leere OCR-Zeilen und leicht versetzte Bounding-Boxes testen.
 
 **Akzeptanz:** Permutierte Eingabelisten derselben geometrischen OCR-Zeilen liefern identischen, korrekt geordneten Text.
 
@@ -66,9 +75,9 @@ Die Aufwände sind **grobe Größenordnungen** für die Umsetzung, keine Zusage.
 
 **Fundstellen:** `MainActivity.java:393–428`, `handleRecognizedText()`.
 
-- [ ] Fehlgeschlagene ML-Kit-Tasks explizit behandeln (`addOnFailureListener` und sinnvoller Status).
-- [ ] `ImageProxy.close()` und Freigabe von `ocrBusy` in jedem Erfolgs-, Abbruch- und Fehlerpfad sicherstellen.
-- [ ] Kein Zugriff auf geschlossene `ImageProxy`-Daten; keine alten OCR-Ergebnisse nach Pause/Zerstörung der Activity verarbeiten.
+- [x] Fehlgeschlagene ML-Kit-Tasks explizit behandeln (`addOnFailureListener` und sinnvoller Status).
+- [x] `ImageProxy.close()` und Freigabe von `ocrBusy` in jedem Erfolgs-, Abbruch- und Fehlerpfad sicherstellen.
+- [x] Kein Zugriff auf geschlossene `ImageProxy`-Daten; keine alten OCR-Ergebnisse nach Pause/Zerstörung der Activity verarbeiten.
 - [ ] Recovery testen: Kamera kurz verdeckt, schnelle Pause/Weiter-Wechsel, App im Hintergrund, Kamera erneut gestartet.
 
 **Akzeptanz:** Die Analyse blockiert nach einem OCR-Fehler nicht dauerhaft; kein doppeltes Schließen und keine nachlaufenden UI-Updates nach Zerstörung.
@@ -93,10 +102,10 @@ Die Aufwände sind **grobe Größenordnungen** für die Umsetzung, keine Zusage.
 
 **Risiko:** Nach `textToSpeech.stop()` wird `queuedUtterances` sofort auf 0 gesetzt; spät eintreffende `onDone`-/`onError`-Callbacks könnten den Zustand neuer Utterances verfälschen.
 
-- [ ] Laufende Ausgaben anhand eindeutiger Utterance-IDs statt allein eines Zählers verfolgen.
-- [ ] Abgebrochene Generationen oder IDs von aktuellen Ausgaben unterscheiden; `onStop` berücksichtigen.
-- [ ] Queue-Policy für schnelle Dialogwechsel definieren: aktuelle Zeile fertig sprechen, veraltete Zeile ersetzen oder bewusst verwerfen.
-- [ ] `QUEUE_ADD`/`QUEUE_FLUSH` und `isSpeaking()` nicht ohne gemeinsamen Zustandsautomaten mischen.
+- [x] Laufende Ausgaben anhand eindeutiger Utterance-IDs statt allein eines Zählers verfolgen.
+- [x] Abgebrochene Generationen oder IDs von aktuellen Ausgaben unterscheiden; `onStop` berücksichtigen.
+- [x] Queue-Policy für schnelle Dialogwechsel definieren: aktuelle Zeile fertig sprechen, veraltete Zeile ersetzen oder bewusst verwerfen.
+- [x] `QUEUE_ADD`/`QUEUE_FLUSH` und `isSpeaking()` nicht ohne gemeinsamen Zustandsautomaten mischen.
 - [ ] Testfälle: Pause mitten im Satz, `NOCHMAL`, neue Dialogbox während TTS, mehrere schnelle Sprecherwechsel und TTS-Fehler.
 
 **Akzeptanz:** Kein endloser „Lese vor“-Status, kein dauerhaft blockiertes Queue-Limit, kein unerwartetes Abspielen bereits abgebrochener Zeilen.
@@ -142,9 +151,9 @@ Die Aufwände sind **grobe Größenordnungen** für die Umsetzung, keine Zusage.
 
 **Fundstellen:** `MainActivity.java:883–1084`.
 
-- [ ] Netzwerkabhängige Stimmen ausschließen, wenn echte Offline-Nutzung das Ziel ist.
-- [ ] Feste Zuordnung der Figurenprofile unabhängig von der zufälligen Reihenfolge installierter Stimmen herstellen; sinnvolle Fallbacks definieren.
-- [ ] Unbekannte Sprecher konsistent einer Stimme zuweisen.
+- [x] Netzwerkabhängige Stimmen ausschließen, wenn echte Offline-Nutzung das Ziel ist.
+- [x] Feste Zuordnung der Figurenprofile unabhängig von der zufälligen Reihenfolge installierter Stimmen herstellen; sinnvolle Fallbacks definieren.
+- [x] Unbekannte Sprecher konsistent einer Stimme zuweisen.
 - [ ] Extremwerte für Pitch/Rate auf Verständlichkeit prüfen (insbesondere `PITCH_MULTIPLIER = 3.2f`).
 
 **Akzeptanz:** Dieselbe Figur erhält bei gleicher Geräte-/Stimmenkonfiguration dasselbe Profil; offline entsteht kein stiller Wechsel auf eine Netzwerkstimme.
@@ -153,10 +162,10 @@ Die Aufwände sind **grobe Größenordnungen** für die Umsetzung, keine Zusage.
 
 **Fundstellen:** `MainActivity.java:1250–1334`.
 
-- [ ] Wörterbuch aus `MainActivity` in eine eigene Daten-/Ressourcenklasse auslagern.
-- [ ] Doppelte Einträge (`evoli`, `glurak`) entfernen und Schlüssel auf Kollisionen prüfen.
-- [ ] Reguläre Ausdrücke sicher erstellen (`Pattern.quote`, passende Unicode-Wortgrenzen) und Eigennamen testen.
-- [ ] Wirkungsgleiche `replaceAll`-Aufrufe in `addNaturalPauses()` entfernen.
+- [x] Wörterbuch aus `MainActivity` in eine eigene Daten-/Ressourcenklasse auslagern.
+- [x] Doppelte Einträge (`evoli`, `glurak`) entfernen und Schlüssel auf Kollisionen prüfen.
+- [x] Reguläre Ausdrücke sicher erstellen (`Pattern.quote`, passende Unicode-Wortgrenzen) und Eigennamen testen.
+- [x] Wirkungsgleiche `replaceAll`-Aufrufe in `addNaturalPauses()` entfernen.
 - [ ] Optional Sätze/TTS-Utterances segmentieren und natürliche Pausen mit mehreren Geräten bzw. Engines vergleichen.
 
 **Akzeptanz:** Textanzeige bleibt unverändert, Ausgabe nutzt das Wörterbuch; keine Ersetzungen innerhalb fremder Wörter; Satzpausen sind nachvollziehbar getestet.
@@ -178,7 +187,7 @@ PronunciationDictionary.java Aussprache
 SettingsRepository.java    Persistente App-Einstellungen
 ```
 
-- [ ] Zuerst reine Funktionen (`normalize`, `levenshtein`, Textzusammenbau) herauslösen.
+- [x] Zuerst reine Funktionen (`normalize`, `levenshtein`, Textzusammenbau) herauslösen.
 - [ ] Dann `DialogueTracker` und TTS isolieren.
 - [ ] Zuletzt Kamera-/Lifecycle-Code extrahieren; keine gleichzeitige Änderung des UI-Frameworks.
 - [ ] State-Ownership und Thread-Zuständigkeit pro Komponente dokumentieren.
@@ -189,7 +198,7 @@ SettingsRepository.java    Persistente App-Einstellungen
 
 **Fundstellen:** `activity_main.xml`, `MainActivity.java:231–314`.
 
-- [ ] Initialwert des Tempo-Sliders und tatsächliche `speechRate` synchronisieren (XML: 48 %, Code: 1,15; Formel führt bei 48 % zu 1,23).
+- [x] Initialwert des Tempo-Sliders und tatsächliche `speechRate` synchronisieren (XML: 48 %, Code: 1,15; Formel führt bei 48 % zu 1,23).
 - [ ] Tempo, Lautstärke, Sounds und Story-Zone über Neustarts speichern.
 - [ ] Interaktive Elemente mit ausreichend großen Touch-Flächen, Beschriftungen und Accessibility-Labels versehen.
 - [ ] Texte in `strings.xml` auslagern; HUD bei kleinen Displays und großer Systemschrift überprüfen.
@@ -204,7 +213,7 @@ SettingsRepository.java    Persistente App-Einstellungen
 - [ ] Mindestens 30–50 repräsentative Dialogfälle als anonymisierte, textuelle OCR-Fixtures mit Bounding-Boxes anlegen; echte Screenshots nur bei Bedarf und geeigneter Freigabe.
 - [ ] Unit-Tests für Sortierung, Duplikate, Sprecherwechsel, Textwachstum, Benachrichtigungsfilter und Aussprache ergänzen.
 - [ ] Tests für schnelle `pause → resume → repeat`-Abfolgen erstellen.
-- [ ] Android-Instrumentation-Tests für Kamera-/Lifecycle-/TTS-Integration auf Referenzgeräten vorbereiten.
+- [x] Android-Instrumentation-Tests für Kamera-/Lifecycle-/TTS-Integration auf Referenzgeräten vorbereiten.
 
 **Akzeptanz:** Regressionen in den genannten Fällen werden automatisch erkannt, bevor Erkennungsalgorithmen geändert werden.
 
@@ -212,10 +221,10 @@ SettingsRepository.java    Persistente App-Einstellungen
 
 **Fundstellen:** Gradle-Dateien, Repo-Wurzel.
 
-- [ ] GitHub Actions für Debug-Build, Unit-Tests und Android Lint einrichten.
-- [ ] JDK-/Gradle-/Android-Gradle-Plugin-Kompatibilität passend zur vorhandenen Toolchain (u. a. Gradle 9.5, JDK 21 für Gradle) überprüfen.
-- [ ] `.DS_Store` und `*.drive-timeout-backup` aus dem Versionsstand entfernen und `.gitignore` ergänzen; keine benötigten Wrapperdateien löschen.
-- [ ] `AGENTS.md` mit Projektkontext, Build-/Testbefehlen und Coding-Konventionen vervollständigen.
+- [x] GitHub Actions für Debug-Build, Unit-Tests und Android Lint einrichten.
+- [x] JDK-/Gradle-/Android-Gradle-Plugin-Kompatibilität passend zur vorhandenen Toolchain (u. a. Gradle 9.5, JDK 21 für Gradle) überprüfen.
+- [x] `.DS_Store` und `*.drive-timeout-backup` aus dem Versionsstand entfernen und `.gitignore` ergänzen; keine benötigten Wrapperdateien löschen.
+- [x] `AGENTS.md` mit Projektkontext, Build-/Testbefehlen und Coding-Konventionen vervollständigen.
 - [ ] Release-Minifizierung und APK-Größe separat prüfen; nicht im ersten Stabilitäts-Patch aktivieren.
 
 **Akzeptanz:** Jeder PR kann automatisch gebaut und getestet werden; Repository enthält keine versehentlichen lokalen Backup-Dateien.
