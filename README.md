@@ -5,7 +5,7 @@ Ein schneller Vorleser für die deutschen Storydialoge von Pokémon Pokopia. Die
 ## Starten
 
 1. Den Ordner `KameraVorleser` in Android Studio öffnen.
-2. Falls gefragt: Android SDK 36 und JDK 17 installieren lassen.
+2. Falls gefragt: Android SDK 36 und JDK 21 (Java-Quellcode: 17) installieren lassen.
 3. Ein echtes Android-Gerät anschließen und **Run** drücken.
 4. Kamerazugriff erlauben und den Switch-2-Bildschirm quer ins Kamerabild nehmen.
 5. Die weiße Pokopia-Dialogbox muss in der goldenen Story-Zone liegen. Große blaue Dialogflächen werden unabhängig von ihrer Position erkannt.
@@ -27,3 +27,14 @@ Der Name auf dem Schild oberhalb der Dialogbox wird nur intern als Sprecherkennu
 Das OCR-Modell ist in der App enthalten und funktioniert ohne Internet. Die App hält den Bildschirm wach und arbeitet, solange sie sichtbar im Vordergrund läuft. Bereits gelesene oder nahezu identische Zeilen werden kurzzeitig übersprungen, damit stehender Text nicht dauernd wiederholt wird.
 
 Die Oberfläche verwendet einen eigenständigen, Pokémon-inspirierten Abenteuerstil mit dunkelblauem HUD, goldener Story-Markierung, spielartiger Dialogkarte und einem eigenen Kamera-Sprechsymbol. Es werden keine offiziellen Logos oder Originalgrafiken verwendet.
+
+## Entwicklung und Prüfung
+
+Mit JDK 21: `./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest`.
+Die App unterstützt API 23; Core-Library-Desugaring stellt die verwendeten neueren
+Java-APIs bereit. Vibration nutzt auf API 23–25 den älteren Aufruf.
+`StoryTextAssembler` ordnet OCR-Fragmente geometrisch und ist ohne Android testbar.
+OCR-Ergebnisse werden bei Pause, erneutem Lesen und Hintergrundwechsel verworfen;
+ein laufendes Bild bleibt bis zum Abschluss offen und wird genau einmal freigegeben.
+
+Umsetzungsstand und Geräte-Testlücken: [Validierung](docs/VALIDIERUNG.md).

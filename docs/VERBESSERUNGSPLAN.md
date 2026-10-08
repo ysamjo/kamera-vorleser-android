@@ -1,9 +1,9 @@
 # Verbesserungsplan – Pokopia Story-Vorleser (Android)
 
-**Stand:** 08.10.2026 · **Status:** geplant · **Basis:** `main` (Initial-Review, Commit `c4c4df4`)  
+**Stand:** 08.10.2026 · **Status:** in Umsetzung · **Basis:** `main` (Initial-Review, Commit `c4c4df4`)
 **Geltungsbereich:** Stabilität, OCR-/Dialogqualität, TTS, Bedienbarkeit, Architektur und Qualitätssicherung.
 
-> Dieser Plan dokumentiert Änderungen, **führt sie aber noch nicht aus**. Alle Befunde stammen aus einem statischen Code-Review; Laufzeitfehler und Performanceannahmen müssen auf Geräten bzw. Emulatoren verifiziert werden.
+> Aktuelle Umsetzung und Validierungsgrenzen stehen in [VALIDIERUNG.md](VALIDIERUNG.md). Der ursprüngliche Plan folgt. Alle Befunde stammen aus einem statischen Code-Review; Laufzeitfehler und Performanceannahmen müssen auf Geräten bzw. Emulatoren verifiziert werden.
 
 ## Zielbild
 

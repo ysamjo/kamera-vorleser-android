@@ -9,6 +9,7 @@ import android.media.AudioManager;
 import android.media.Image;
 import android.media.ToneGenerator;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.speech.tts.TextToSpeech;
@@ -138,6 +139,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private TextToSpeech textToSpeech;
     private volatile boolean ttsReady = false;
     private volatile boolean paused = false;
+    private volatile boolean foreground = false;
+    private volatile boolean destroyed = false;
+    private final AtomicInteger analysisGeneration = new AtomicInteger();
     private volatile long lastAnalysisAt = 0L;
     private String currentSpeaker = NARRATOR;
     private long lastSpeakerSeenAt = 0L;
@@ -258,6 +262,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         pauseButton.setOnClickListener(view -> {
             paused = !paused;
+            invalidateAnalysis();
             pauseButton.setText(paused ? "WEITER" : "PAUSE");
             pauseButton.setIconResource(paused ? R.drawable.ic_play : R.drawable.ic_pause);
             if (paused) {
@@ -270,6 +275,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         });
 
         repeatButton.setOnClickListener(view -> {
+            invalidateAnalysis();
             spokenLines.clear();
             lastSpokenVisible = "";
             lastSpokenNormalized = "";
@@ -323,6 +329,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     @Override
     public void onInit(int status) {
+        if (destroyed) return;
         if (status != TextToSpeech.SUCCESS) {
             showStatus("Sprachausgabe ist nicht verfügbar", false);
             return;
@@ -357,6 +364,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(this);
         future.addListener(() -> {
             try {
+                if (destroyed) return;
                 ProcessCameraProvider provider = future.get();
 
                 Preview preview = new Preview.Builder().build();
@@ -390,41 +398,64 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }, ContextCompat.getMainExecutor(this));
     }
 
+    private void invalidateAnalysis() {
+        analysisGeneration.incrementAndGet();
+        pendingStoryKey = "";
+        pendingStoryHits = 0;
+        lastAnalysisAt = 0L;
+    }
+
+    private boolean acceptsFrame(int generation) {
+        return !destroyed && foreground && !paused && generation == analysisGeneration.get();
+    }
+
+    @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalGetImage.class)
     private void analyzeFrame(@NonNull ImageProxy imageProxy) {
-        long now = System.currentTimeMillis();
-        if (paused || now - lastAnalysisAt < ANALYSIS_INTERVAL_MS || !ocrBusy.compareAndSet(false, true)) {
+        int generation = analysisGeneration.get();
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (!acceptsFrame(generation) || now - lastAnalysisAt < ANALYSIS_INTERVAL_MS
+                || !ocrBusy.compareAndSet(false, true)) {
             imageProxy.close();
             return;
         }
         lastAnalysisAt = now;
-
-        if (imageProxy.getImage() == null) {
-            ocrBusy.set(false);
-            imageProxy.close();
-            return;
+        // Ein einziger Abschluss besitzt Frame und Busy-Flag, auch bei synchronen Fehlern.
+        FrameRelease release = new FrameRelease(() -> {
+            try { imageProxy.close(); }
+            finally {
+                ocrBusy.set(false);
+                if (destroyed) textRecognizer.close();
+            }
+        });
+        try {
+            if (!acceptsFrame(generation) || imageProxy.getImage() == null) {
+                release.close();
+                return;
+            }
+            int rotation = imageProxy.getImageInfo().getRotationDegrees();
+            InputImage image = InputImage.fromMediaImage(imageProxy.getImage(), rotation);
+            int width = rotation == 90 || rotation == 270 ? imageProxy.getHeight() : imageProxy.getWidth();
+            int height = rotation == 90 || rotation == 270 ? imageProxy.getWidth() : imageProxy.getHeight();
+            textRecognizer.process(image).addOnCompleteListener(ContextCompat.getMainExecutor(this), task -> {
+                try {
+                    if (!acceptsFrame(generation)) return;
+                    if (task.isSuccessful()) {
+                        handleRecognizedText(task.getResult(), imageProxy, rotation, width, height);
+                    } else {
+                        showStatus("Texterkennung fehlgeschlagen – versuche erneut", false);
+                    }
+                } catch (RuntimeException error) {
+                    showStatus("Text konnte nicht verarbeitet werden – versuche erneut", false);
+                } finally {
+                    release.close();
+                }
+            });
+        } catch (RuntimeException error) {
+            release.close();
+            runOnUiThread(() -> {
+                if (acceptsFrame(generation)) showStatus("Texterkennung fehlgeschlagen – versuche erneut", false);
+            });
         }
-
-        InputImage image = InputImage.fromMediaImage(
-                imageProxy.getImage(),
-                imageProxy.getImageInfo().getRotationDegrees()
-        );
-        int rotation = imageProxy.getImageInfo().getRotationDegrees();
-        int uprightWidth = rotation == 90 || rotation == 270
-                ? imageProxy.getHeight() : imageProxy.getWidth();
-        int uprightHeight = rotation == 90 || rotation == 270
-                ? imageProxy.getWidth() : imageProxy.getHeight();
-        textRecognizer.process(image)
-                .addOnSuccessListener(result -> handleRecognizedText(
-                        result,
-                        imageProxy,
-                        rotation,
-                        uprightWidth,
-                        uprightHeight
-                ))
-                .addOnCompleteListener(task -> {
-                    ocrBusy.set(false);
-                    imageProxy.close();
-                });
     }
 
     private void handleRecognizedText(
@@ -609,7 +640,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         // Vibrations-Feedback bei neuem Text
         if (vibrator != null && vibrator.hasVibrator()) {
-            vibrator.vibrate(VibrationEffect.createOneShot(VIBRATION_DURATION_MS, VibrationEffect.DEFAULT_AMPLITUDE));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(VIBRATION_DURATION_MS, VibrationEffect.DEFAULT_AMPLITUDE));
+            } else {
+                vibrator.vibrate(VIBRATION_DURATION_MS);
+            }
         }
 
         queuedUtterances.incrementAndGet();
@@ -802,6 +837,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         pendingStoryHits = 0;
     }
 
+    @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalGetImage.class)
     private boolean isBlueBackedLine(ImageProxy imageProxy, Rect box, int rotation) {
         Image mediaImage = imageProxy.getImage();
         if (mediaImage == null || box == null || mediaImage.getPlanes().length < 3) return false;
@@ -1135,66 +1171,14 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private String assembleStoryText(List<OcrLine> lines) {
-        if (lines == null || lines.isEmpty()) return "";
-
-        // Nur gültige Zeilen mit BoundingBox übernehmen
-        List<OcrLine> validLines = new ArrayList<>();
-        for (OcrLine line : lines) {
-            if (line != null && line.box != null && !line.visible.trim().isEmpty()) {
-                validLines.add(line);
+        List<StoryTextAssembler.Line> input = new ArrayList<>();
+        if (lines != null) for (OcrLine line : lines) {
+            if (line != null && line.box != null) {
+                input.add(new StoryTextAssembler.Line(line.visible, line.box.left,
+                        line.box.top, line.box.right, line.box.bottom));
             }
         }
-        if (validLines.isEmpty()) return "";
-
-        // 1. Zeilen stabil von oben nach unten sortieren (strikt transitiv)
-        validLines.sort(Comparator.comparingInt(a -> a.box.top));
-
-        // 2. In visuelle Textzeilen (Reihen) gruppieren
-        List<List<OcrLine>> rows = new ArrayList<>();
-        for (OcrLine line : validLines) {
-            boolean added = false;
-            for (List<OcrLine> row : rows) {
-                OcrLine anchor = row.get(0);
-                int yDiff = Math.abs(line.box.centerY() - anchor.box.centerY());
-                int avgH = Math.max(1, (line.box.height() + anchor.box.height()) / 2);
-                if (yDiff < avgH * 0.5f) {
-                    row.add(line);
-                    added = true;
-                    break;
-                }
-            }
-            if (!added) {
-                List<OcrLine> newRow = new ArrayList<>();
-                newRow.add(line);
-                rows.add(newRow);
-            }
-        }
-
-        // 3. Jede Zeile von links nach rechts ordnen (strikt transitiv)
-        for (List<OcrLine> row : rows) {
-            row.sort(Comparator.comparingInt(a -> a.box.left));
-        }
-
-        StringBuilder assembled = new StringBuilder();
-        for (OcrLine line : lines) {
-            String text = line.visible.trim();
-            if (text.isEmpty()) continue;
-
-            if (assembled.length() == 0) {
-                assembled.append(text);
-                continue;
-            }
-
-            // Prüfen auf Silbentrennung am Zeilenende (z. B. "Poké-" + "ball" -> "Pokéball")
-            if (assembled.charAt(assembled.length() - 1) == '-' && !assembled.toString().endsWith(" -")) {
-                assembled.setLength(assembled.length() - 1);
-                assembled.append(text);
-            } else {
-                // Zeilen flüssig mit Leerzeichen verbinden (keine künstlichen Punkte!)
-                assembled.append(" ").append(text);
-            }
-        }
-        return assembled.toString().trim();
+        return StoryTextAssembler.assemble(input);
     }
 
     private String extractExtensionSuffix(String fullVisible, String prefixVisible) {
@@ -1421,7 +1405,17 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     @Override
     protected void onResume() {
         super.onResume();
+        foreground = true;
         hideSystemBars();
+    }
+
+    @Override
+    protected void onPause() {
+        foreground = false;
+        invalidateAnalysis();
+        if (textToSpeech != null) textToSpeech.stop();
+        queuedUtterances.set(0);
+        super.onPause();
     }
 
     private void hideSystemBars() {
@@ -1475,12 +1469,15 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     @Override
     protected void onDestroy() {
+        destroyed = true;
+        foreground = false;
+        invalidateAnalysis();
         super.onDestroy();
         if (textToSpeech != null) {
             textToSpeech.stop();
             textToSpeech.shutdown();
         }
-        if (textRecognizer != null) textRecognizer.close();
+        if (textRecognizer != null && !ocrBusy.get()) textRecognizer.close();
         if (cameraExecutor != null) cameraExecutor.shutdown();
         if (toneGenerator != null) {
             toneGenerator.release();

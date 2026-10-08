@@ -11,3 +11,5 @@ captures/
 *.apk
 *.keystore
 *.jks
+
+Archiv/*.zip

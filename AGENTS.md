@@ -1,10 +1,18 @@
-# KameraVorleser
+# Pokopia Story-Vorleser
 
-## Projekt-Kontext
-- (Kurzbeschreibung hier eintragen)
+## Kontext und Grenzen
+Native Android-App (Java 17, CameraX, gebündeltes ML Kit, Android-TTS).
+Offline-OCR ist Pflicht; keine Cloud-Dienste und keine Übertragung von Bildern/Texten.
+`MainActivity` besitzt UI, Dialogzustand und TTS auf dem Main Thread. Der
+CameraX-Executor nimmt Frames an. ML-Kit-Abschluss läuft explizit auf dem Main
+Thread; Bilddaten bleiben bis zum Abschluss gültig. `FrameRelease` gibt genau
+einmal frei. `StoryTextAssembler` enthält reine Geometrie-/Textlogik.
+Schwellen, Sprecherprofile und Bediensemantik nur mit gezieltem Regressionstest ändern.
 
-## Konventionen
-- 
-
-## Commands
-- 
+## Befehle
+- JDK 21 für Gradle 9.5.0 / AGP 9.3.2; SDK 36, minSdk 23.
+- Prüfung: `./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest`
+- APK: `app/build/outputs/apk/debug/app-debug.apk`
+- Gerät prüfen: `adb devices -l`; nur auf dem ausdrücklich gewählten Testgerät installieren.
+- Vor Änderungen aktuellen Plan in `docs/VERBESSERUNGSPLAN.md` lesen.
+- Validierungsgrenzen in `docs/VALIDIERUNG.md` pflegen; Unit-Tests ersetzen keine Kamera-/TTS-Gerätetests.
