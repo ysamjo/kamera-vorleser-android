@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "kamera_vorleser_android",
+  "project_id": "909053a1-4602-4df3-9843-490eb0d2eebf"
+}
