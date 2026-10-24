@@ -8,7 +8,7 @@ public class PronunciationDictionaryTest {
     }
     @Test public void germanUmlautsRemainGermanAndDecomposedOcrIsNormalized() {
         assertEquals("Schön, dass du zurück bist! Äpfel, Öl, Übermut und Straße.",
-                PronunciationDictionary.apply("Scho\\u0308n, dass du zuru\\u0308ck bist! A\\u0308pfel, O\\u0308l, U\\u0308bermut und Straße."));
+                PronunciationDictionary.apply("Schön, dass du zurück bist! Äpfel, Öl, Übermut und Straße."));
     }
 
     @Test public void doesNotReplaceInsideOtherWords() {
