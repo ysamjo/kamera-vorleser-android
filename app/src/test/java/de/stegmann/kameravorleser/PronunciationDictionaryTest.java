@@ -6,6 +6,11 @@ public class PronunciationDictionaryTest {
         assertEquals("Piekatschu, Pokemohn! Ho Oh?", PronunciationDictionary.apply("PIKACHU, POKÉMON! Ho-Oh?"));
         assertEquals("Ewoli und Glurahk", PronunciationDictionary.apply("Evoli und Glurak"));
     }
+    @Test public void germanUmlautsRemainGermanAndDecomposedOcrIsNormalized() {
+        assertEquals("Schön, dass du zurück bist! Äpfel, Öl, Übermut und Straße.",
+                PronunciationDictionary.apply("Scho\\u0308n, dass du zuru\\u0308ck bist! A\\u0308pfel, O\\u0308l, U\\u0308bermut und Straße."));
+    }
+
     @Test public void doesNotReplaceInsideOtherWords() {
         String original = "Pokémonwelt Äevoli evoliÄ evoli2 _evoli";
         assertEquals(original, PronunciationDictionary.apply(original));
