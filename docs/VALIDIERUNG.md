@@ -124,3 +124,25 @@ Ein Wechsel der Action-Hauptversionen wurde nicht mit den Stabilitätsfixes verm
 
 Technische Referenzen: [Java-API-Desugaring](https://developer.android.com/studio/write/java8-support),
 [VibrationEffect ab API 26](https://developer.android.com/reference/android/os/VibrationEffect).
+
+## Dialogstimmen, Umlaute und Dialoggedächtnis (Oktober 2026)
+
+- Dialoge werden in einer auf 500 Einträge begrenzten Historie aus Sprecher und
+  normalisiertem Text gespeichert; JSON liegt ausschließlich in lokalen App-Einstellungen.
+  Die bisherige 60-Sekunden-Verfallszeit entfällt.
+- Derselbe Text mit einem anderen Sprecher bleibt sprechbar. Bei manueller Wiederholung
+  wird nur die sichtbare Zeile freigegeben. Unterbrochene/fehlgeschlagene TTS-Ausgaben
+  werden aus der Historie entfernt und können erneut gesprochen werden.
+- Erkannte Namenspräfixe wie „Pikachu: Hallo“ werden aus dem Vorlesetext entfernt;
+  die Sprecheranzeige bleibt erhalten.
+- Sprecherwechsel leeren veraltete TTS-Ausgaben, bevor die neue lokale Offline-Stimme
+  mit eigenem Pitch/Tempo angewendet wird. Extreme Pitch-/Rate-Werte wurden begrenzt.
+  Deutsche de-DE-Stimmen erhalten bei gleichwertiger Offline-Verfügbarkeit Vorrang.
+- Deutsche Zeichen werden für die TTS in NFC normalisiert. Das behebt Unicode-
+  Kombinationen aus der OCR, garantiert aber keine gute Aussprache einer fehlerhaften
+  oder qualitativ schwachen Android-TTS-Engine.
+- Neue JUnit-Regressionstests decken Sprechertrennung, Deduplizierung, Neustart-
+  Wiederherstellung, manuelles Neu-Lesen, Namensentfernung, Umlaute und TTS-Abbruch ab.
+- **Nicht am Gerät verifiziert:** reales Pokopia-OCR-Namensschild, akustische Qualität
+  einzelner deutscher Offline-Stimmen, Timing bei raschem Dialogwechsel und
+  Wiederherstellung der Einstellungen auf einem Testgerät. Diese Prüfungen bleiben offen.
