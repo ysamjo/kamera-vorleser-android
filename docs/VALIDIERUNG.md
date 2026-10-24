@@ -247,3 +247,12 @@ nur durch Leerzeichen getrennte Wörter. Bei `Hallo!Wie geht es?` nach `Hallo!`
 verschwand dadurch „Wie“; bei Erweiterung des letzten Worts konnte die Ausgabe
 ganz ausfallen. `DialogueText.extensionSuffix` zählt nun Unicode-Wörter und
 liest bei fehlender Wortgrenze den vollständigen Text. Eigener Regressionstest.
+
+
+CI-Nachprüfung: Lauf [40077860630](https://github.com/ysamjo/kamera-vorleser-android/actions/runs/40077860630)
+auf `e13e2b1` bestand mit Debug-/Release-APK, Debug-/Release-App-Bundles,
+Debug-Lint, Debug-Unit-Tests und Instrumentation-APK. Das detaillierte Log zeigt,
+dass die AGP-Sammelbefehle `lint` und `test` nur Debug geprüft haben.
+Die CI fordert deshalb nun beide Varianten ausdrücklich an;
+`android.onlyEnableUnitTestForTheTestedBuildType=false` aktiviert auch die
+Release-Unit-Tests. Ergebnisse des abschließenden Laufs stehen in PR #1.

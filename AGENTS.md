@@ -38,4 +38,4 @@ löschen. TTS-Abschluss und Initialisierung immer auf den Main Thread posten.
 `SpeakerVoice` berechnet Namensvariation und Tempo ohne persistierten Raten-Cache.
 Auch Normalisierung und Namensentfernung müssen zusammengesetzte Umlaute erhalten.
 Vollprüfung: `./gradlew :app:assembleDebug :app:assembleRelease :app:bundleDebug
-:app:bundleRelease :app:lint :app:test :app:assembleDebugAndroidTest` (eine Zeile).
+:app:bundleRelease :app:lintDebug :app:lintRelease :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleDebugAndroidTest` (eine Zeile).
