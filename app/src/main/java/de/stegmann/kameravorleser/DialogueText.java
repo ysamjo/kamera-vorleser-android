@@ -1,7 +1,5 @@
 package de.stegmann.kameravorleser;
 
-import java.util.Locale;
-
 /** Entfernt ausschließlich das zur Dialogbox gehörende Namensschild. */
 final class DialogueText {
     private DialogueText() {}
