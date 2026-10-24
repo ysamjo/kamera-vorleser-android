@@ -124,3 +124,135 @@ Ein Wechsel der Action-Hauptversionen wurde nicht mit den Stabilitätsfixes verm
 
 Technische Referenzen: [Java-API-Desugaring](https://developer.android.com/studio/write/java8-support),
 [VibrationEffect ab API 26](https://developer.android.com/reference/android/os/VibrationEffect).
+
+## Dialogstimmen, Umlaute und Dialoggedächtnis (Oktober 2026)
+
+- Dialoge werden in einer auf 500 Einträge begrenzten Historie aus Sprecher und
+  normalisiertem Text gespeichert; JSON liegt ausschließlich in lokalen App-Einstellungen.
+  Die bisherige 60-Sekunden-Verfallszeit entfällt.
+- Derselbe Text mit einem anderen Sprecher bleibt sprechbar. Bei manueller Wiederholung
+  wird nur die sichtbare Zeile freigegeben. Unterbrochene/fehlgeschlagene TTS-Ausgaben
+  werden aus der Historie entfernt und können erneut gesprochen werden.
+- Erkannte Namenspräfixe wie „Pikachu: Hallo“ werden aus dem Vorlesetext entfernt;
+  die Sprecheranzeige bleibt erhalten.
+- Sprecherwechsel leeren veraltete TTS-Ausgaben, bevor die neue lokale Offline-Stimme
+  mit eigenem Pitch/Tempo angewendet wird. Extreme Pitch-/Rate-Werte wurden begrenzt.
+  Deutsche de-DE-Stimmen erhalten bei gleichwertiger Offline-Verfügbarkeit Vorrang.
+- Deutsche Zeichen werden für die TTS in NFC normalisiert. Das behebt Unicode-
+  Kombinationen aus der OCR, garantiert aber keine gute Aussprache einer fehlerhaften
+  oder qualitativ schwachen Android-TTS-Engine.
+- Neue JUnit-Regressionstests decken Sprechertrennung, Deduplizierung, Neustart-
+  Wiederherstellung, manuelles Neu-Lesen, Namensentfernung, Umlaute und TTS-Abbruch ab.
+- **Nicht am Gerät verifiziert:** reales Pokopia-OCR-Namensschild, akustische Qualität
+  einzelner deutscher Offline-Stimmen, Timing bei raschem Dialogwechsel und
+  Wiederherstellung der Einstellungen auf einem Testgerät. Diese Prüfungen bleiben offen.
+
+
+## PR #1: erneute Codeprüfung am 24.10.2026
+
+Geprüfter Ausgangsstand: `c5fceb6189691952fb829e29806ec807fb07d8bf`.
+Der über GitHub abgerufene PR wurde auf der lokalen Basis rekonstruiert;
+der komplette Git-Tree stimmt mit `139d45060f018466891be83594e6791f798df795`
+überein (einschließlich Symlinks). Alle 11 geänderten Dateien sowie die
+angebundenen Kamera-, TTS-, Text- und Lifecycle-Pfade wurden gelesen.
+Der angegebene Actions-Lauf `40069308661` war erfolgreich; er prüft den alten
+PR-Stand und belegt keine Validierung der nachstehenden Korrekturen.
+
+### Befunde und Korrekturen
+
+| Priorität | Befund | Korrektur |
+| --- | --- | --- |
+| P1 | Bereits eingereihte Sprache wurde dauerhaft als gelesen gespeichert; ein Prozessabbruch ließ ungehörte Dialoge verschwinden. | Laufende Dialoge bleiben flüchtig; erst `onDone` speichert abgeschlossene Dialoge. Fehler und Stop entfernen nur laufende Einträge. |
+| P1 | „Neu lesen“ löschte einen exakten Schlüssel, während die Duplikatsuche ähnliche OCR-Texte weiter blockierte. | Einmalige, ebenfalls OCR-tolerante Freigabe; abgeschlossene Historie bleibt auch bei Abbruch einer Wiederholung erhalten. |
+| P1 | Erweiterung konnte vor der Historienprüfung erneut gesprochen werden. | Historie zuerst prüfen; echte zusätzliche Wörter bleiben neue Dialogteile. |
+| P1 | Bei voller Queue erreichte ein neuer Sprecher den Abbruchpfad nicht. | Stabile Sprecherwechsel stoppen die alte Queue vor der Duplikat- und Kapazitätsprüfung. |
+| P1 | Gleicher Text konnte die Stabilitätszählung über Sprecherwechsel hinweg übernehmen; fehlendes Schild übernahm beim neuen Dialog die vorige Stimme. | Sprecherwechsel entwerten die Analyse; bei abweichendem Dialog ohne Schild Erzähler verwenden. |
+| P1 | Sieben Namensvariationen und Pitch-Clamping führten zu gleichen Figurenprofilen. | Stabile Variation in Tonhöhe und Tempo, unabhängig von Java-Hashcode-Kollisionen; Variation bleibt an Profilgrenzen erhalten. |
+| P1 | Skalierung gespeicherter, begrenzter Tempi war nicht reversibel und ignorierte Teile des Reglers. | Tempo direkt aus aktuellem Regler und Figurenprofil berechnen; alte Raten-Einstellungen werden nicht mehr verwendet. |
+| P1 | Nach 900 Zeichen abgeschnittener Text wurde als vollständig gelesen gespeichert. | Keine stille Abschneidung; oberhalb des Engine-Limits Hinweis und keine Speicherung. |
+| P2 | NFC erst bei TTS ließ zerlegte Umlaute in Sprecherkennung und Historie beschädigen. | NFC auch beim Vergleichen und Entfernen von Namenspräfixen. ä, ö, ü, ß bleiben erhalten. |
+| P2 | `restore` verwarf lange, zuvor gespeicherte Dialoge über 1200 Zeichen. | Schlüssel bis 8192 Zeichen zulassen; Langtext-Restore getestet. |
+| P2 | Kurze zusätzliche Wörter einschließlich Verneinungen konnten als OCR-Rauschen verschwinden. | Unscharfer Vergleich nur bei gleicher Wortanzahl; bewusste Präfix-Erkennung bleibt erhalten. |
+| P2 | `setPitch`/`setSpeechRate`-Fehler wurden ignoriert; Init und synchrone Abschluss-Callbacks konnten Zustand zu früh ändern. | Rückgabewerte prüfen; Initialisierung und Abschluss immer in den Main-Thread-Handler stellen. |
+| P2 | Auswahl mehrerer Voice-Slots konnte trotz vorhandener de-DE-Stimme auf andere deutsche Regionen wechseln. | Bei vorhandenen de-DE-Offline-Stimmen nur diese verwenden. |
+
+### Lokale Prüfungen
+
+- 36 JUnit-Testmethoden erfolgreich mit JDK 21/JUnit 4.13.2, direkt per `javac`
+  und `JUnitCore` ausgeführt. Sämtliche vorhandenen Unit-Testklassen enthalten;
+  keine Netzwerkzugriffe. Neue Fälle prüfen laufende/abgeschlossene Historie,
+  Wiederholung nach OCR-Abweichung und Abbruch, Neustart-Snapshots, lange Texte,
+  Umlaute, fehlende Namensschilder und Verneinungen.
+- Stimmenprüfung: pro Kombination von sechs Basisprofilen und drei Reglerwerten
+  1100 synthetische Namen ohne identische Pitch-/Rate-Paare; zusätzlich bekannte
+  Namen sowie die Java-Hashcode-Kollision `Aa`/`BB`. Das ist kein Hörtest und
+  keine vollständige Liste aller Pokémon.
+- Alle Android-Java-Quellen mit SDK-36-`android.jar`, lokal vorhandenen
+  Abhängigkeits-JARs und bestehendem `R.jar` kompiliert. Dies ersetzt weder
+  Gradle noch Ressourcenverarbeitung, Desugaring, APK-Bau oder Lint.
+- `git diff --check` erfolgreich.
+- Vollständiger Gradle-Aufruf versucht: Debug-/Release-APK, beide App-Bundles,
+  beide Lint-/JUnit-Varianten und Instrumentation-APK. Zunächst verhindert der
+  schreibgeschützte Gradle-Cache den Start. Mit beschreibbarem Cache fehlt
+  Gradle 9.5; Download scheitert mit `UnknownHostException: services.gradle.org`.
+  Vorhandenes Gradle 9.6 scheitert schon vor der Projektkonfiguration an
+  `SocketException: Operation not permitted` im File-Lock-Dienst.
+- CI-Aufruf auf sämtliche oben genannten Varianten erweitert. Ergebnis des
+  neuen Laufs separat festhalten; der alte erfolgreiche Lauf reicht nicht aus.
+
+### Tatsächlicher Installations- und Gerätestatus
+
+`adb devices -l` wurde versucht. Der ADB-Daemon kann in dieser Sitzung den
+lokalen Listener nicht öffnen: `could not install *smartsocket* listener:
+Operation not permitted`. Es gibt daher **keine bestätigte Geräteliste**;
+daraus folgt nicht, dass das Pixel physisch getrennt ist.
+
+**Keine APK installiert. Keine App-Daten gelöscht. Kein anderes Gerät benutzt.**
+Der ursprüngliche Ordner `/Users/family/Developer/kamera-vorleser-android` ist
+in dieser Sitzung nur lesbar und bleibt auf `main`/`f3c2bfa`; Änderungen entstehen
+in `/tmp/pokopia-review` und werden auf dem bestehenden PR-Branch veröffentlicht.
+
+| Gerätetest auf Pixel 10 | Ergebnis dieser Sitzung |
+| --- | --- |
+| Modell/Seriennummer per ADB bestätigen | Blockiert |
+| APK mit `adb -s <bestätigte-ID> install -r` aktualisieren | Nicht durchgeführt |
+| Reale Kamera und Pokopia-OCR | Nicht durchgeführt |
+| Schnelle Sprecherwechsel und akustisch unterscheidbare Stimmen | Nicht durchgeführt |
+| Deutsche Aussprache inklusive ä/ö/ü/ß und Flugmodus | Nicht durchgeführt |
+| Pause/Weiter, Neu lesen, Neustart und gespeichertes Dialoggedächtnis | Nicht durchgeführt |
+| `connectedDebugAndroidTest` | Blockiert; kein Instrumentation-Ergebnis |
+
+### Verbleibende Grenzen
+
+- Gleiche Figurenprofile mit kleinen numerischen Abweichungen garantieren keine
+  hörbar einzigartige Stimme: Die installierte Engine kann Werte quantisieren.
+  Die Engine stellt nur endlich viele lokale Grundstimmen bereit.
+- Geometrische Namensschild-/ROI-Erkennung und Typewriter-Ruhezeiten benötigen
+  weiterhin reale Kamera-Fixtures. Fehlende oder falsch erkannte Namen können
+  keinem zuverlässigen Pokémon-Profil zugeordnet werden. Zwei völlig gleiche
+  Dialoge ohne unterscheidbares Schild lassen sich nicht sicher zuordnen.
+- Unscharfe OCR-Erkennung kann weiterhin ähnlich geschriebene, aber inhaltlich
+  verschiedene Sätze derselben Wortanzahl gleichsetzen. Bei Bedarf „Neu lesen“.
+- Gedächtnis bleibt auf die letzten 500 abgeschlossenen Dialoge begrenzt.
+  Ältere Einträge können erneut gesprochen werden. Ein Absturz unmittelbar
+  zwischen hörbarem Ende und persistiertem TTS-Abschluss kann eine Wiederholung
+  verursachen; es gibt keine atomare Transaktion zwischen Lautsprecher und Disk.
+- Ältere PR-Versionen bereits fälschlich gespeicherte Queue-Einträge lassen sich
+  rückwirkend nicht von tatsächlich gehörten Einträgen unterscheiden.
+- API-23/26/30-Kompatibilität und subjektive Natürlichkeit sind ohne Gerätetests
+  nicht nachgewiesen. Keine Freigabe als vollständig am Pixel getestet ableiten.
+
+Zusätzlicher Randfall der Abschlussprüfung: Die alte Erweiterungslogik zählte
+nur durch Leerzeichen getrennte Wörter. Bei `Hallo!Wie geht es?` nach `Hallo!`
+verschwand dadurch „Wie“; bei Erweiterung des letzten Worts konnte die Ausgabe
+ganz ausfallen. `DialogueText.extensionSuffix` zählt nun Unicode-Wörter und
+liest bei fehlender Wortgrenze den vollständigen Text. Eigener Regressionstest.
+
+
+CI-Nachprüfung: Lauf [40077860630](https://github.com/ysamjo/kamera-vorleser-android/actions/runs/40077860630)
+auf `e13e2b1` bestand mit Debug-/Release-APK, Debug-/Release-App-Bundles,
+Debug-Lint, Debug-Unit-Tests und Instrumentation-APK. Das detaillierte Log zeigt,
+dass die AGP-Sammelbefehle `lint` und `test` nur Debug geprüft haben.
+Die CI fordert deshalb nun beide Varianten ausdrücklich an;
+`android.onlyEnableUnitTestForTheTestedBuildType=false` aktiviert auch die
+Release-Unit-Tests. Ergebnisse des abschließenden Laufs stehen in PR #1.

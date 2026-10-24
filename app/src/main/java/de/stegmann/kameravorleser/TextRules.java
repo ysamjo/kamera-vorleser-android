@@ -1,6 +1,7 @@
 package de.stegmann.kameravorleser;
 
 import java.util.Locale;
+import java.text.Normalizer;
 
 /** Bestehende Filter und Ähnlichkeitsschwellen, unverändert und separat testbar. */
 final class TextRules {
@@ -65,7 +66,7 @@ final class TextRules {
     }
 
     static String normalize(String value) {
-        return value.toLowerCase(Locale.GERMAN)
+        return Normalizer.normalize(value, Normalizer.Form.NFC).toLowerCase(Locale.GERMAN)
                 .replaceAll("[^\\p{L}\\p{N}]+", " ")
                 .trim();
     }

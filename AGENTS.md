@@ -30,3 +30,12 @@ Instrumentation bauen: `./gradlew :app:assembleDebugAndroidTest`.
 Instrumentation ausführen: `ANDROID_SERIAL=<ADB-Gerät> ./gradlew :app:connectedDebugAndroidTest`.
 Gerät wach/entsperrt halten; übersprungene Tests ausdrücklich berichten.
 Das zusammengeführte App-Manifest darf keine INTERNET-Berechtigung enthalten.
+
+`DialogueHistory` trennt laufende von abgeschlossenen Dialogen. Nur `finish(key,
+true)` nach `onDone` speichert dauerhaft; Stop/Fehler geben nur laufende Einträge
+frei. „Neu lesen“ setzt eine einmalige Freigabe statt gespeicherte Einträge zu
+löschen. TTS-Abschluss und Initialisierung immer auf den Main Thread posten.
+`SpeakerVoice` berechnet Namensvariation und Tempo ohne persistierten Raten-Cache.
+Auch Normalisierung und Namensentfernung müssen zusammengesetzte Umlaute erhalten.
+Vollprüfung: `./gradlew :app:assembleDebug :app:assembleRelease :app:bundleDebug
+:app:bundleRelease :app:lintDebug :app:lintRelease :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleDebugAndroidTest` (eine Zeile).

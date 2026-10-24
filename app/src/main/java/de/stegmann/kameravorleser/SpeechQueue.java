@@ -1,5 +1,7 @@
 package de.stegmann.kameravorleser;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -26,5 +28,10 @@ final class SpeechQueue {
     boolean contains(String id) { return pending.containsKey(id); }
     String finish(String id) { return pending.remove(id); }
     int size() { return pending.size(); }
+    List<String> drain() {
+        List<String> unfinished = new ArrayList<>(pending.values());
+        pending.clear();
+        return unfinished;
+    }
     void clear() { pending.clear(); }
 }

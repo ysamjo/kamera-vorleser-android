@@ -13,7 +13,7 @@ Ein schneller Vorleser für die deutschen Storydialoge von Pokémon Pokopia. Die
 ## Bedienung
 
 - **Pause/Weiter:** Kamera bleibt sichtbar, OCR und Sprache pausieren.
-- **Neu lesen:** Der gerade sichtbare Text darf erneut vorgelesen werden.
+- **Neu lesen:** Nur der gerade sichtbare Dialog darf erneut vorgelesen werden; frühere Dialoge bleiben im Gedächtnis.
 - **Sprechtempo:** Regelt die Geschwindigkeit der deutschen Systemstimme.
 
 Die App bleibt vollständig still, solange im eingegrenzten Storybereich oder auf einer großen blauen Dialogfläche kein neuer Text erscheint. Ein Text muss in zwei aufeinanderfolgenden Kamerabildern stabil erkannt werden, bevor er gesprochen wird. Das verkürzt die Reaktionszeit deutlich. Herstellungsanzeigen wie „Neue Kreation“ und „Du hast … hergestellt“, Hinweise wie „kein Text sichtbar“, Pokémon-Namen, Auswahlmenüs sowie typische Aktionshinweise wie „A Weiter“, „A Untersuchen“, „Zurück“, „Ja“ oder „Nein“ werden nicht vorgelesen.
@@ -24,7 +24,7 @@ Ein lokales Aussprache-Wörterbuch korrigiert wichtige Begriffe nur für die Spr
 
 Der Name auf dem Schild oberhalb der Dialogbox wird nur intern als Sprecherkennung genutzt. Der Name selbst wird nicht gesprochen; namenlose Texte erhalten eine neutrale Erzählerstimme. Die Stimmen sind passend zu Pokémon-Gruppen kuratiert: kleine Pokémon klingen heller und lebhafter, große oder felsige Pokémon tiefer, Mooslaxo langsam und weich, Rotom/Porygon technisch, Geist-Pokémon dunkler und legendäre Pokémon ruhig-autoritär. Professor Tangoloss besitzt ein eigenes warmes, tiefes Profil. Unbekannte Figuren erhalten ein aus ihrem Namen deterministisch abgeleitetes Profil. Es werden keine urheberrechtlich geschützten Original-Pokémon-Stimmen mitgeliefert.
 
-Das OCR-Modell ist in der App enthalten und funktioniert ohne Internet. Die App hält den Bildschirm wach und arbeitet, solange sie sichtbar im Vordergrund läuft. Bereits gelesene oder nahezu identische Zeilen werden kurzzeitig übersprungen, damit stehender Text nicht dauernd wiederholt wird.
+Das OCR-Modell ist in der App enthalten und funktioniert ohne Internet. Die App hält den Bildschirm wach und arbeitet, solange sie sichtbar im Vordergrund läuft. Bereits vorgelesene oder nahezu identische Dialoge desselben Sprechers werden auch nach einem App-Neustart nicht erneut gelesen. Die letzten 500 Dialoge bleiben lokal auf dem Gerät gespeichert. Derselbe Satz von einem anderen Pokémon wird als eigener Dialog behandelt. Bei abgebrochener oder fehlgeschlagener Sprachausgabe darf die Zeile erneut gestartet werden.
 
 Die Oberfläche verwendet einen eigenständigen, Pokémon-inspirierten Abenteuerstil mit dunkelblauem HUD, goldener Story-Markierung, spielartiger Dialogkarte und einem eigenen Kamera-Sprechsymbol. Es werden keine offiziellen Logos oder Originalgrafiken verwendet.
 
@@ -44,11 +44,10 @@ abgebrochener Ausgaben beeinflussen neue Ausgaben nicht. Fehlerhafte Ausgaben
 werden erneut versuchbar; Pause und Hintergrundwechsel stoppen die Sprache.
 
 GitHub Actions prüft jeden Push auf `main` und jeden Pull Request mit JDK 21,
-Debug-Build, Android Lint und JUnit. Prüfberichte und Debug-APK werden als
+Debug-/Release-APK und App-Bundles, Android Lint und JUnit für beide Varianten. Prüfberichte und Debug-APK werden als
 Workflow-Artefakte bereitgestellt.
 
-Es werden ausschließlich installierte deutsche Offline-Stimmen ausgewählt, stabil
-nach Qualität und Namen sortiert. Fehlt eine solche Stimme, zeigt die App einen
+Es werden ausschließlich installierte deutsche Offline-Stimmen ausgewählt, bevorzugt de-DE und anschließend nach Qualität und Latenz sortiert. Sprecherwechsel brechen eine eventuell noch laufende vorherige Ausgabe ab, damit neue Dialoge das neue Stimmenprofil erhalten. Moderate Tonhöhen und Tempi vermeiden unnötig hölzernen Klang; die tatsächliche Sprachqualität hängt von den installierten TTS-Stimmen ab. Zusammengesetzte OCR-Umlaute werden vor der Sprachausgabe normalisiert. Fehlt eine solche Stimme, zeigt die App einen
 Hinweis zur Installation in den Android-TTS-Einstellungen; ein Netzwerkfallback
 findet nicht statt. Die Offline-Stimme muss vor der Nutzung installiert sein.
 Tempo und Lautstärke werden wie die Sound-Einstellung über Neustarts gespeichert.
@@ -61,3 +60,17 @@ Auf einem ausgewählten, entsperrten Testgerät ausführen:
 `ANDROID_SERIAL=<ADB-Gerät> ./gradlew :app:connectedDebugAndroidTest`.
 Lifecycle-Tests werden bei gesperrtem/schlafendem Gerät ausdrücklich übersprungen.
 Ein OCR-Smoke-Test ersetzt keinen realen Pokopia-Kameratest oder Hörtest.
+
+Die Historie speichert nur per TTS-Abschluss bestätigte Dialoge. Laufende Texte
+bleiben bis zum Abschluss im Arbeitsspeicher; ein Prozessabbruch verhindert so
+nicht den nächsten Versuch. „Neu lesen“ gibt die sichtbare Zeile einmal frei,
+ohne die gespeicherte Historie zu löschen. OCR-Umlaute werden bereits für
+Sprecherkennung und Dialogvergleich in NFC normalisiert.
+
+Jede Sprecherkennung erhält eine stabile Variation von Tonlage und Tempo;
+die Berechnung hängt weder von der Reihenfolge der Dialoge noch von früheren
+Reglerbewegungen ab. Wenn de-DE-Offline-Stimmen vorhanden sind, werden nur diese
+verwendet; sonst bleiben andere installierte deutsche Offline-Stimmen zulässig.
+Die hörbare Unterscheidbarkeit aller Figuren hängt von der Engine ab und ist
+nicht durch unterschiedliche Zahlenprofile garantiert. Bei einem neuen Dialog
+ohne erkanntes Namensschild fällt die App auf den Erzähler zurück.

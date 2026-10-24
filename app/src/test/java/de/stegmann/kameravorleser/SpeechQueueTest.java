@@ -24,6 +24,16 @@ public class SpeechQueueTest {
         assertEquals("neu", queue.finish(current));
         assertEquals(0, queue.size());
     }
+    @Test public void drainReturnsUnfinishedDialoguesAndIgnoresLateCallbacks() {
+        SpeechQueue queue = new SpeechQueue();
+        String first = queue.add("pikachu\\u001fhallo");
+        String second = queue.add("bisasam\\u001fguten morgen");
+        assertEquals(2, queue.drain().size());
+        assertEquals(0, queue.size());
+        assertNull(queue.finish(first));
+        assertNull(queue.finish(second));
+    }
+
     @Test public void completionAndErrorForSameIdAreIdempotent() {
         SpeechQueue queue = new SpeechQueue();
         String first = queue.add("eins");

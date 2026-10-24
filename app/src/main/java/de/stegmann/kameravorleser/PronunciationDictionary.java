@@ -1,5 +1,6 @@
 package de.stegmann.kameravorleser;
 
+import java.text.Normalizer;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.regex.Pattern;
@@ -74,7 +75,9 @@ final class PronunciationDictionary {
     }
 
     static String apply(String text) {
-        String result = text;
+        // OCR kann Umlaute als Basisbuchstabe + kombinierendes Zeichen liefern.
+        // NFC erhält ä, ö, ü und ß für die deutsche TTS-Engine.
+        String result = Normalizer.normalize(text, Normalizer.Form.NFC);
         for (Map.Entry<String, String> entry : pronunciationDict.entrySet()) {
             // Case-insensitive Ersetzung mit Wortgrenzen
             result = result.replaceAll("(?iu)(?<![\\p{L}\\p{N}_])" + Pattern.quote(entry.getKey())
