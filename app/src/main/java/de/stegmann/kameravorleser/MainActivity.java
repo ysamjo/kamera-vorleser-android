@@ -109,12 +109,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final float BLUE_REGION_HEIGHT_RATIO = 0.10f; // Höhe der Sampling-Region
 
     // TTS/Voice-Schwellwerte
-    private static final float PITCH_MULTIPLIER = 3.2f; // Pitch-Spreizung: 3.2x
-    private static final float PITCH_MIN = 0.50f;
-    private static final float PITCH_MAX = 1.65f;
-    private static final float RATE_MULTIPLIER = 1.55f; // Rate-Spreizung: 1.55x
-    private static final float RATE_MIN = 0.55f;
-    private static final float RATE_MAX = 1.85f;
+    // Extreme Tonhöhen/Tempi verzerren installierte Offline-Stimmen.
+    private static final float PITCH_MULTIPLIER = 0.75f;
+    private static final float PITCH_MIN = 0.82f;
+    private static final float PITCH_MAX = 1.25f;
+    private static final float RATE_MULTIPLIER = 0.85f;
+    private static final float RATE_MIN = 0.85f;
+    private static final float RATE_MAX = 1.35f;
     private static final float VOICE_CACHE_THRESHOLD = 0.02f; // Nur Voice ändern wenn Differenz > 2%
     private static final int VIBRATION_DURATION_MS = 35; // Vibration bei neuem Text: 35ms
 
@@ -677,6 +678,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         // Natürliche Pausen einfügen
         String withPauses = PronunciationDictionary.addNaturalPauses(corrected);
 
+        // Neue Figur: veraltete Warteschlangen-Einträge dürfen nicht die neue Stimme erben.
+        if (speechQueue.size() > 0 && !normalize(speaker).equals(cachedSpeaker)) {
+            stopSpeech();
+        }
         applyVoiceForSpeaker(speaker, emotionPitchMod, emotionRateMod);
         if (!ttsReady) return false;
 
@@ -949,9 +954,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                             TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED))) continue;
             allGerman.add(voice);
         }
+        // Zuerst deutsche DE-Stimmen, dann nach Qualität und Latenz sortieren.
         allGerman.sort(Comparator
-                .comparing(Voice::isNetworkConnectionRequired)
+                .comparingInt((Voice voice) -> "DE".equalsIgnoreCase(voice.getLocale().getCountry()) ? 0 : 1)
                 .thenComparing(Comparator.comparingInt(Voice::getQuality).reversed())
+                .thenComparingInt(Voice::getLatency)
                 .thenComparing(Voice::getName));
         germanVoices.clear();
         germanVoices.addAll(allGerman);
@@ -970,8 +977,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         // Get or create per-speaker rate
         float speakerRate = getSpeakerRate(key, profile);
 
-        float targetPitch = effectivePitch(profile) * emotionPitchMod;
-        float targetRate = speakerRate * emotionRateMod;
+        // Auch Pokémon derselben Kategorie erhalten eine dezente individuelle Tonlage.
+        float identityPitch = (Math.floorMod(key.hashCode(), 7) - 3) * 0.018f;
+        float targetPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX,
+                (effectivePitch(profile) + identityPitch) * emotionPitchMod));
+        float targetRate = Math.max(RATE_MIN, Math.min(RATE_MAX, speakerRate * emotionRateMod));
 
         // Voice-Caching: Nur ändern wenn wirklich nötig
         boolean needsUpdate = !cachedSpeaker.equals(key)
@@ -1000,7 +1010,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private float getSpeakerRate(String speakerKey, VoiceProfile profile) {
         // If we have a cached rate for this speaker, use it
         if (speakerRates.containsKey(speakerKey)) {
-            return speakerRates.get(speakerKey);
+            return Math.max(RATE_MIN, Math.min(RATE_MAX, speakerRates.get(speakerKey)));
         }
 
         // Otherwise, calculate from profile's base rate factor and current global rate
@@ -1120,8 +1130,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private float effectivePitch(VoiceProfile profile) {
-        // Viele Android-Geräte haben nur eine deutsche Grundstimme installiert.
-        // Die stärkere Spreizung macht jedes Pokémon deutlich unterscheidbar.
+        // Stimmprofile bleiben unterscheidbar, ohne die Sprache unnatürlich zu verzerren.
         float pitch = 1.0f + (profile.pitch - 1.0f) * PITCH_MULTIPLIER;
         return Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch));
     }
@@ -1130,7 +1139,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         // Use speaker-specific rate if available, otherwise calculate from profile
         String speakerKey = normalize(currentSpeaker);
         if (speakerRates.containsKey(speakerKey)) {
-            return speakerRates.get(speakerKey);
+            return Math.max(RATE_MIN, Math.min(RATE_MAX, speakerRates.get(speakerKey)));
         }
         float rate = speechRate * (1.0f + (profile.rateFactor - 1.0f) * RATE_MULTIPLIER);
         return Math.max(RATE_MIN, Math.min(RATE_MAX, rate));
