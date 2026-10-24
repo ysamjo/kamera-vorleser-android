@@ -4,6 +4,75 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class DialogueHistoryTest {
+    @Test public void failedFirstWindowInvalidatesDependentSuffixAndLateCompletion() {
+        DialogueHistory history = new DialogueHistory(500);
+        SpeechQueue queue = new SpeechQueue();
+        String first = DialogueHistory.key("Evoli", "Wir gehen jetzt zum großen Baum.");
+        String next = DialogueHistory.key("Evoli", "zum großen Baum. Komm mit!");
+        String firstId = queue.add(first);
+        history.begin(first);
+        assertEquals("Komm mit!", history.unreadText("Evoli", "zum großen Baum. Komm mit!"));
+        String nextId = queue.add(next);
+        history.begin(next);
+        history.finish(queue.finish(firstId), false);
+        for (String pending : queue.drain()) history.finish(pending, false);
+        assertNull(queue.finish(nextId));
+        assertTrue(history.snapshot().isEmpty());
+        assertEquals("zum großen Baum. Komm mit!", history.unreadText("Evoli", "zum großen Baum. Komm mit!"));
+    }
+
+    @Test public void scrollingSpeaksOnlyNewSuffixAndPersistsWholeCoveredWindow() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Tangoloss", "Wir gehen jetzt zum großen Baum.");
+        String window = "zum großen Baum. Dort wächst eine schöne Blume!";
+        assertEquals("Dort wächst eine schöne Blume!", history.unreadText("Tangoloss", window));
+        String key = DialogueHistory.key("Tangoloss", window);
+        history.begin(key);
+        history.finish(key, true);
+        DialogueHistory restart = new DialogueHistory(500);
+        restart.restore(history.snapshot());
+        assertEquals("", restart.unreadText("Tangoloss", "Dort wächst eine schöne Blume!"));
+        assertEquals("Komm mit!", restart.unreadText("Tangoloss", "eine schöne Blume! Komm mit!"));
+    }
+
+    @Test public void queuedOverlapDoesNotRepeatAndAbortLeavesSuffixRetryable() {
+        DialogueHistory history = new DialogueHistory(500);
+        String first = DialogueHistory.key("Evoli", "Wir gehen jetzt zum großen Baum.");
+        history.begin(first);
+        assertEquals("Komm mit!", history.unreadText("Evoli", "zum großen Baum. Komm mit!"));
+        history.finish(first, false);
+        assertTrue(history.snapshot().isEmpty());
+        assertEquals("zum großen Baum. Komm mit!", history.unreadText("Evoli", "zum großen Baum. Komm mit!"));
+    }
+
+    @Test public void scrollOverlapPreservesUmlautsAndDoesNotRemoveNegation() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Hier stehen große grüne Bäume.");
+        assertEquals("Öl gibt es dort.", history.unreadText("Evoli", "große gru\u0308ne Bäume. Öl gibt es dort."));
+        assertEquals("Hier stehen keine großen grünen Bäume.", history.unreadText("Evoli", "Hier stehen keine großen grünen Bäume."));
+        assertEquals("große grüne Bäume. Komm mit!", history.unreadText("Pikachu", "große grüne Bäume. Komm mit!"));
+    }
+
+    @Test public void manualRepeatBypassesScrollingCoverageOnce() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Wir gehen jetzt zum großen Baum.");
+        String visible = "zum großen Baum. Komm mit!";
+        history.allowRepeat("Evoli", visible);
+        assertEquals(visible, history.unreadText("Evoli", visible));
+        String key = DialogueHistory.key("Evoli", visible);
+        history.begin(key);
+        assertEquals("", history.unreadText("Evoli", visible));
+        history.finish(key, true);
+        assertEquals("", history.unreadText("Evoli", visible));
+    }
+
+    @Test public void completeInternalFragmentIsSilentButShortCommonWordsAreNotClipped() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Hallo, wir gehen jetzt zum großen Baum und dann zurück.");
+        assertEquals("", history.unreadText("Evoli", "gehen jetzt zum großen Baum"));
+        assertEquals("dann zurück nach Hause!", history.unreadText("Evoli", "dann zurück nach Hause!"));
+    }
+
     @Test public void repeatedOcrAndPunctuationVariationsAreSilent() {
         DialogueHistory history = new DialogueHistory(100);
         history.remember("Pikachu", "Hallo, mein Freund!");

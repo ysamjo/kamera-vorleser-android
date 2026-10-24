@@ -2,16 +2,18 @@ package de.stegmann.kameravorleser;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
+import androidx.appcompat.app.AlertDialog;
+import androidx.camera.core.FocusMeteringAction;
+import androidx.camera.core.FocusMeteringResult;
+import androidx.camera.core.MeteringPoint;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.graphics.Rect;
-import android.media.AudioManager;
 import android.media.Image;
-import android.media.ToneGenerator;
 import android.os.Bundle;
-import android.os.Build;
-import android.os.VibrationEffect;
-import android.os.Vibrator;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
@@ -64,6 +66,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 import org.json.JSONException;
 
 public class MainActivity extends AppCompatActivity implements TextToSpeech.OnInitListener {
@@ -76,12 +79,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final float STORY_RIGHT_RATIO = 0.79f;
     private static final float SPEAKER_TOP_RATIO = 0.70f;
     private static final float SPEAKER_BOTTOM_RATIO = 0.81f;
-    private static final long SPEAKER_HOLD_MS = 2500L;
     private static final int REQUIRED_STABLE_FRAMES = 2;
     private static final long STABLE_WINDOW_MS = 1100L;
     private static final String NARRATOR = "Erzähler";
     private static final String PREFS_NAME = "KameraVorleserPrefs";
-    private static final String KEY_SOUNDS_ENABLED = "soundsEnabled";
+    private static final String KEY_VOICE_ASSIGNMENTS = "speakerVoicesV1";
 
     // OCR & Text-Erkennungs-Schwellwerte
     private static final int MIN_SPEAKER_NAME_LENGTH = 2;
@@ -91,8 +93,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     // UI-Region-Schwellwerte
     private static final float SPEAKER_MAX_CENTER_X = 0.62f; // Speaker-Namen maximal bei 62% horizontal
     private static final float SPEAKER_MAX_WIDTH = 0.36f; // Speaker-Namen maximal 36% Bildbreite
-    private static final float STORY_GAP_MAX_HEIGHT_RATIO = 0.14f; // Max Abstand Speaker->Story: 14% Bildhöhe
-    private static final float STORY_GAP_MAX_HORIZONTAL_RATIO = 0.25f; // Max horizontaler Abstand: 25%
 
     // Blaue Dialog-Erkennung (YUV-Farb-Schwellwerte)
     private static final int BLUE_MIN_VALUE = 70; // Mindest-Blau-Wert
@@ -103,12 +103,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final float BLUE_REGION_WIDTH_RATIO = 0.18f; // Breite der Sampling-Region
     private static final float BLUE_REGION_HEIGHT_RATIO = 0.10f; // Höhe der Sampling-Region
 
-    // TTS/Voice-Schwellwerte
-    // Extreme Tonhöhen/Tempi verzerren installierte Offline-Stimmen.
-    private static final int VIBRATION_DURATION_MS = 35; // Vibration bei neuem Text: 35ms
 
     private PreviewView previewView;
     private TextView statusText;
+    private View focusRing;
     private TextView speakerText;
     private TextView recognizedText;
     private TextView confidenceText;
@@ -124,13 +122,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private TextRecognizer textRecognizer;
     private TextToSpeech textToSpeech;
     private volatile boolean ttsReady = false;
+    private boolean speechInitialized = false;
     private volatile boolean paused = false;
     private volatile boolean foreground = false;
     private volatile boolean destroyed = false;
     private final AtomicInteger analysisGeneration = new AtomicInteger();
     private volatile long lastAnalysisAt = 0L;
     private String currentSpeaker = NARRATOR;
-    private long lastSpeakerSeenAt = 0L;
     private String pendingStoryKey = "";
     private int pendingStoryHits = 0;
     private long pendingStorySeenAt = 0L;
@@ -139,19 +137,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private float cachedPitch = 1.0f;
     private float cachedRate = 1.0f;
     private float volume = 0.8f;
-    private Vibrator vibrator;
+    private final VoiceAssignments voiceAssignments = new VoiceAssignments();
+    private boolean voiceSettingsOpen = false;
+    private int focusRequest = 0;
 
-    private String previousSpeaker = "";
-
-    // Dialog & Satzfluss-Tracking (Wachstum, Klick-Erweiterung, Duplikatvermeidung)
-    private String lastSpokenVisible = "";
-    private String lastSpokenNormalized = "";
-    private String lastSpokenSpeaker = "";
-    private long lastSpokenAt = 0L;
-
-    // Sound feedback
-    private boolean soundsEnabled = true;
-    private ToneGenerator toneGenerator;
 
     private final ActivityResultLauncher<String> cameraPermission =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
@@ -207,6 +196,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         });
 
         previewView = findViewById(R.id.previewView);
+        focusRing = new View(this);
+        focusRing.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        focusRing.setVisibility(View.GONE);
+        ((ViewGroup) mainRoot).addView(focusRing,
+                new androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(dpToPx(48), dpToPx(48)));
         statusText = findViewById(R.id.statusText);
         speakerText = findViewById(R.id.speakerText);
         recognizedText = findViewById(R.id.recognizedText);
@@ -218,17 +212,16 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         SeekBar speedSeekBar = findViewById(R.id.speedSeekBar);
         SeekBar volumeSeekBar = findViewById(R.id.volumeSeekBar);
         Button repeatButton = findViewById(R.id.repeatButton);
-        MaterialButton soundsToggleButton = findViewById(R.id.soundsToggleButton);
+        findViewById(R.id.soundsToggleButton).setOnClickListener(view -> showVoiceSettings());
 
         cameraExecutor = Executors.newSingleThreadExecutor();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         textToSpeech = new TextToSpeech(this, this);
-        vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
 
-        // Load sound preference
+        // Lokale Einstellungen und bestätigte Dialoge laden.
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         loadDialogueHistory(prefs);
-        soundsEnabled = prefs.getBoolean(KEY_SOUNDS_ENABLED, true);
+        loadVoiceAssignments(prefs);
         speechRate = prefs.getFloat("speechRate", 1.15f);
         volume = prefs.getFloat("volume", 0.8f);
         if (Float.isNaN(speechRate) || Float.isInfinite(speechRate)) speechRate = 1.15f;
@@ -237,16 +230,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         volume = Math.max(0f, Math.min(1f, volume));
         speedSeekBar.setProgress(Math.round((speechRate - 0.75f) * 100));
         volumeSeekBar.setProgress(Math.round(volume * 100));
-
-        // Initialize tone generator for audio feedback
-        toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, 50);
-
-        // Update sounds toggle button state
-        updateSoundsToggleButton(soundsToggleButton);
-        soundsToggleButton.setOnClickListener(view -> {
-            toggleSounds();
-            updateSoundsToggleButton(soundsToggleButton);
-        });
 
         pauseButton.setOnClickListener(view -> {
             paused = !paused;
@@ -266,7 +249,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             stopSpeech();
             // Nur die sichtbare Zeile erneut zulassen, die Historie bleibt erhalten.
             dialogueHistory.allowRepeat(currentSpeaker, recognizedText.getText().toString());
-            resetLastSpoken();
             showStatus("Aktueller Dialog kann erneut gelesen werden", true);
         });
 
@@ -316,6 +298,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             return;
         }
 
+        speechInitialized = true;
         int languageResult = textToSpeech.setLanguage(Locale.GERMANY);
         ttsReady = languageResult != TextToSpeech.LANG_MISSING_DATA
                 && languageResult != TextToSpeech.LANG_NOT_SUPPORTED;
@@ -342,22 +325,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private void stopSpeech() {
-        // Unterbrochene Zeilen sind nicht vollständig vorgelesen und dürfen erneut starten.
-        for (String key : speechQueue.drain()) {
-            dialogueHistory.finish(key, false);
-            if (key.equals(DialogueHistory.key(lastSpokenSpeaker, lastSpokenNormalized))) {
-                resetLastSpoken();
-            }
-        }
         // Vor stop() entwerten: Engines dürfen sofort oder später zurückrufen.
+        for (String key : speechQueue.drain()) dialogueHistory.finish(key, false);
         if (textToSpeech != null) textToSpeech.stop();
-    }
-
-    private void resetLastSpoken() {
-        lastSpokenVisible = "";
-        lastSpokenNormalized = "";
-        lastSpokenSpeaker = "";
-        lastSpokenAt = 0L;
     }
 
     private void finishSpeech(String id, boolean failed) {
@@ -365,11 +335,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             String key = speechQueue.finish(id);
             if (key == null || destroyed) return;
             if (dialogueHistory.finish(key, !failed)) saveDialogueHistory();
-            if (failed) {
-                if (key.equals(DialogueHistory.key(lastSpokenSpeaker, lastSpokenNormalized))) {
-                    resetLastSpoken();
-                }
-            }
+            // Nachfolgende Scroll-Suffixe können von dieser Ausgabe abhängen.
+            if (failed) stopSpeech();
             if (foreground && !paused && speechQueue.size() == 0) {
                 showStatus(failed ? "Sprachausgabe fehlgeschlagen – versuche erneut" : "Suche Text …", !failed);
             }
@@ -481,7 +448,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             int frameWidth,
             int frameHeight
     ) {
-        if (paused) return;
+        if (paused || voiceSettingsOpen) return;
 
         long now = System.currentTimeMillis();
         if (result.getText().isBlank()) {
@@ -530,16 +497,16 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         String detectedSpeaker = detectSpeaker(result, storyLines, frameWidth, frameHeight);
         if (detectedSpeaker != null) {
+            detectedSpeaker = SpeakerLabels.canonicalName(detectedSpeaker);
             if (!normalize(currentSpeaker).equals(normalize(detectedSpeaker))) invalidateAnalysis();
             currentSpeaker = detectedSpeaker;
-            lastSpeakerSeenAt = now;
-        } else if (now - lastSpeakerSeenAt > SPEAKER_HOLD_MS) {
-            if (!currentSpeaker.equals(NARRATOR)) invalidateAnalysis();
-            currentSpeaker = NARRATOR;
         }
 
         String speakerKey = normalize(currentSpeaker);
-        storyLines.removeIf(line -> line.normalized.equals(speakerKey));
+        storyLines.removeIf(line -> line.normalized.equals(speakerKey)
+                || (speakerKey.startsWith("professor ")
+                    && (line.normalized.equals("professor")
+                        || line.normalized.equals(speakerKey.substring("professor ".length())))));
 
         if (storyLines.isEmpty()) {
             clearPendingStoryIfStale(now);
@@ -556,7 +523,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             return;
         }
         if (detectedSpeaker == null && !currentSpeaker.equals(NARRATOR)
-                && !DialogueText.sameDialogue(recognizedText.getText().toString(), visibleStory)) {
+                && !DialogueText.sameDialogue(recognizedText.getText().toString(), visibleStory)
+                && DialogueText.unreadAfter(visibleStory, recognizedText.getText().toString()).equals(visibleStory)) {
             currentSpeaker = NARRATOR;
             invalidateAnalysis();
         }
@@ -586,69 +554,19 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (speechQueue.size() > 0 && !normalize(currentSpeaker).equals(cachedSpeaker)) stopSpeech();
         if (dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) return;
 
-        // Klick-Erweiterung: Wenn der Text nach einem Klick um einen neuen Satzteil gewachsen ist
-        boolean isExtension = !lastSpokenNormalized.isEmpty()
-                && normalize(currentSpeaker).equals(lastSpokenSpeaker)
-                && (now - lastSpokenAt < 10000L)
-                && normalizedStory.startsWith(lastSpokenNormalized)
-                && normalizedStory.length() > lastSpokenNormalized.length() + 3;
-
-        if (isExtension) {
-            boolean ttsSpeaking = speechQueue.size() > 0;
-            if (ttsSpeaking) {
-                // Vorheriges unvollständiges Vorlesen abbrechen und vollen, runden Gesamtsatz sprechen
-                stopSpeech();
-                if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
-            } else {
-                String trimmedLast = lastSpokenVisible != null ? lastSpokenVisible.trim() : "";
-                char lastChar = !trimmedLast.isEmpty() ? trimmedLast.charAt(trimmedLast.length() - 1) : ' ';
-                if (lastChar == '.' || lastChar == '!' || lastChar == '?' || lastChar == '…' || lastChar == ':') {
-                    String suffix = DialogueText.extensionSuffix(visibleStory, lastSpokenVisible);
-                    if (!suffix.isBlank()) {
-                        if (!speak(suffix, currentSpeaker, normalizedStory)) return;
-                    }
-                } else {
-                    // Satz war unvollständig getrennt -> vollen Satz flüssig sprechen
-                    if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
-                }
-            }
-            lastSpokenVisible = visibleStory;
-            lastSpokenNormalized = normalizedStory;
-            lastSpokenSpeaker = normalize(currentSpeaker);
-            lastSpokenAt = now;
-            showStatus("Lese vor …", true);
-            return;
-        }
-
-        // Neuen Dialog vollständig und flüssig sprechen
-        if (ttsReady && (speechQueue.size() < MAX_QUEUED_UTTERANCES
-                || !normalize(currentSpeaker).equals(cachedSpeaker))) {
-            if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
-            lastSpokenVisible = visibleStory;
-            lastSpokenNormalized = normalizedStory;
-            lastSpokenSpeaker = normalize(currentSpeaker);
-            lastSpokenAt = now;
-            showStatus("Lese vor …", true);
-        }
+        // Maximal zwei Scrollfenster seriell sprechen. Bei Fehler oder Abbruch
+        // wird die gesamte abhängige Queue verworfen, damit kein ungehörter Text gilt.
+        if (speechQueue.size() >= MAX_QUEUED_UTTERANCES || !ttsReady) return;
+        String unread = dialogueHistory.unreadText(currentSpeaker, visibleStory);
+        if (unread.isBlank()) return;
+        if (!speak(unread, currentSpeaker, normalizedStory)) return;
+        showStatus("Lese vor …", true);
     }
 
     private boolean speak(String text, String speaker, String dialogueKey) {
         if (!ttsReady || paused || !foreground || destroyed) return false;
         // Aussprache-Wörterbuch anwenden
         String corrected = PronunciationDictionary.apply(text);
-
-        // Emotionale Variation basierend auf Satzzeichen
-        float emotionPitchMod = 1.0f;
-        float emotionRateMod = 1.0f;
-        if (corrected.contains("!")) {
-            emotionPitchMod = 1.08f;
-            emotionRateMod = 1.06f;
-        } else if (corrected.contains("?")) {
-            emotionPitchMod = 1.05f;
-            emotionRateMod = 0.96f;
-        } else if (corrected.endsWith("...") || corrected.contains(" ... ")) {
-            emotionRateMod = 0.92f;
-        }
 
         // Natürliche Pausen einfügen
         String withPauses = PronunciationDictionary.addNaturalPauses(corrected);
@@ -662,20 +580,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (speechQueue.size() > 0 && !normalize(speaker).equals(cachedSpeaker)) {
             stopSpeech();
         }
-        applyVoiceForSpeaker(speaker, emotionPitchMod, emotionRateMod);
+        applyVoiceForSpeaker(speaker);
         if (!ttsReady) return false;
-
-        // Audio-Feedback bei neuem Text
-        playNewTextSound();
-
-        // Vibrations-Feedback bei neuem Text
-        if (vibrator != null && vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(VIBRATION_DURATION_MS, VibrationEffect.DEFAULT_AMPLITUDE));
-            } else {
-                vibrator.vibrate(VIBRATION_DURATION_MS);
-            }
-        }
 
         // Lautstärke über Bundle setzen
         Bundle params = new Bundle();
@@ -697,29 +603,30 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             int frameWidth,
             int frameHeight
     ) {
+        String inlineName = SpeakerLabels.inlineName(assembleStoryText(storyLines));
+        if (inlineName != null) return inlineName;
         OcrLine reference = null;
         for (OcrLine line : storyLines) {
             if (line.box == null) continue;
             if (reference == null
-                    || line.visible.length() > reference.visible.length()
-                    || line.box.width() > reference.box.width() * 1.25f) {
+                    || (SpeakerLabels.hasDialogueWords(line.visible) && !SpeakerLabels.hasDialogueWords(reference.visible))
+                    || (SpeakerLabels.hasDialogueWords(line.visible) == SpeakerLabels.hasDialogueWords(reference.visible)
+                        && line.visible.length() > reference.visible.length())) {
                 reference = line;
             }
         }
 
         if (reference != null && reference.box != null) {
-            String relative = detectSpeakerNearStory(result, reference, frameWidth, frameHeight);
-            if (relative != null) {
-                String relativeKey = normalize(relative);
-                boolean isStoryLine = false;
-                for (OcrLine storyLine : storyLines) {
-                    if (storyLine.normalized.equals(relativeKey)) {
-                        isStoryLine = true;
-                        break;
-                    }
-                }
-                if (!isStoryLine) return relative;
+            List<StoryTextAssembler.Line> lines = new ArrayList<>();
+            for (Text.TextBlock block : result.getTextBlocks()) for (Text.Line line : block.getLines()) {
+                Rect box = line.getBoundingBox();
+                if (box != null) lines.add(new StoryTextAssembler.Line(line.getText(),
+                        box.left, box.top, box.right, box.bottom));
             }
+            String relative = SpeakerLabels.above(lines, new StoryTextAssembler.Line(reference.visible,
+                    reference.box.left, reference.box.top, reference.box.right, reference.box.bottom),
+                    frameWidth, frameHeight);
+            if (relative != null) return relative;
         }
 
         String best = null;
@@ -738,46 +645,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         return best;
     }
 
-    private String detectSpeakerNearStory(
-            Text result,
-            OcrLine storyReference,
-            int frameWidth,
-            int frameHeight
-    ) {
-        String best = null;
-        int smallestGap = Integer.MAX_VALUE;
-        for (Text.TextBlock block : result.getTextBlocks()) {
-            for (Text.Line line : block.getLines()) {
-                Rect box = line.getBoundingBox();
-                String candidate = line.getText().trim().replaceAll("\\s+", " ");
-                if (box == null || !isShortSpeakerName(candidate, box, frameWidth)) continue;
-
-                int gap = storyReference.box.top - box.bottom;
-                int horizontalDistance = Math.abs(box.left - storyReference.box.left);
-                if (gap < -storyReference.box.height()
-                        || gap > frameHeight * STORY_GAP_MAX_HEIGHT_RATIO
-                        || horizontalDistance > frameWidth * STORY_GAP_MAX_HORIZONTAL_RATIO) {
-                    continue;
-                }
-                if (normalize(candidate).equals(storyReference.normalized)) continue;
-                if (gap < smallestGap) {
-                    smallestGap = gap;
-                    best = candidate;
-                }
-            }
-        }
-        return best;
-    }
-
-    private boolean isShortSpeakerName(String text, Rect box, int frameWidth) {
-        String normalized = normalize(text);
-        if (normalized.length() < MIN_SPEAKER_NAME_LENGTH
-                || normalized.length() > MAX_SPEAKER_NAME_LENGTH
-                || isActionLabel(text)) return false;
-        int words = normalized.split("\\s+").length;
-        return words <= MAX_SPEAKER_NAME_WORDS && box.width() < frameWidth * SPEAKER_MAX_WIDTH;
-    }
-
     private boolean isSpeakerLabel(Rect box, int frameWidth, int frameHeight, String text) {
         if (box == null || text.length() < MIN_SPEAKER_NAME_LENGTH
                 || text.length() > MAX_SPEAKER_NAME_LENGTH) return false;
@@ -790,7 +657,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 && centerY < SPEAKER_BOTTOM_RATIO
                 && centerX < SPEAKER_MAX_CENTER_X
                 && width < SPEAKER_MAX_WIDTH
-                && !isActionLabel(text);
+                && !isActionLabel(text)
+                && !SpeakerLabels.hasDialogueWords(text);
     }
 
     private boolean isInStoryRegion(Rect box, int frameWidth, int frameHeight) {
@@ -800,12 +668,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 && centerX >= STORY_LEFT_RATIO
                 && centerX <= STORY_RIGHT_RATIO;
     }
-
-
-
-
-
-
 
     private boolean isStableStory(String text, long now) {
         String key = normalize(text);
@@ -836,8 +698,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         pendingStorySeenAt = now;
         return pendingStoryHits >= REQUIRED_STABLE_FRAMES;
     }
-
-
 
     private void clearPendingStoryIfStale(long now) {
         if (now - pendingStorySeenAt <= 700L) return;
@@ -925,6 +785,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private void loadGermanVoices() {
+        germanVoices.clear();
         List<Voice> allGerman = new ArrayList<>();
         if (textToSpeech.getVoices() == null) return;
         for (Voice voice : textToSpeech.getVoices()) {
@@ -948,18 +809,12 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         germanVoices.addAll(allGerman);
     }
 
-    private void applyVoiceForSpeaker(String speaker, float emotionPitchMod, float emotionRateMod) {
+    private void applyVoiceForSpeaker(String speaker) {
         String key = normalize(speaker);
         VoiceProfile profile = voiceProfileFor(key);
 
-        // Check for speaker change and play sound
-        if (!key.equals(previousSpeaker) && !previousSpeaker.isEmpty()) {
-            playSpeakerChangeSound();
-        }
-        previousSpeaker = key;
-
-        float targetPitch = SpeakerVoice.pitch(key, profile.pitch, emotionPitchMod);
-        float targetRate = SpeakerVoice.rate(key, profile.rateFactor, speechRate, emotionRateMod);
+        float targetPitch = SpeakerVoice.pitch(key, profile.pitch);
+        float targetRate = SpeakerVoice.rate(key, profile.rateFactor, speechRate);
 
         // Voice-Caching: Nur ändern wenn wirklich nötig
         boolean needsUpdate = !cachedSpeaker.equals(key)
@@ -968,8 +823,12 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         if (needsUpdate) {
             if (!germanVoices.isEmpty()) {
-                int voiceIndex = Math.floorMod(profile.voiceSlot, germanVoices.size());
-                if (textToSpeech.setVoice(germanVoices.get(voiceIndex)) != TextToSpeech.SUCCESS) {
+                List<String> names = new ArrayList<>();
+                for (Voice voice : germanVoices) names.add(voice.getName());
+                String voiceName = voiceAssignments.choose(key, names);
+                saveVoiceAssignments();
+                Voice selected = germanVoices.stream().filter(v -> v.getName().equals(voiceName)).findFirst().get();
+                if (textToSpeech.setVoice(selected) != TextToSpeech.SUCCESS) {
                     ttsReady = false;
                     showStatus("Offline-Stimme konnte nicht geladen werden", false);
                     return;
@@ -983,6 +842,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 return;
             }
 
+            ttsReady = true;
             cachedSpeaker = key;
             cachedPitch = targetPitch;
             cachedRate = targetRate;
@@ -990,107 +850,107 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private float getSpeakerRate(String speakerKey, VoiceProfile profile) {
-        return SpeakerVoice.rate(speakerKey, profile.rateFactor, speechRate, 1f);
+        return SpeakerVoice.rate(speakerKey, profile.rateFactor, speechRate);
     }
 
     private VoiceProfile voiceProfileFor(String speaker) {
         if (speaker.isBlank() || speaker.equals(normalize(NARRATOR))) {
-            return new VoiceProfile(0, 0.98f, 0.96f);
+            return new VoiceProfile(0.98f, 0.96f);
         }
 
         if (matchesAny(speaker, "professor", "tangoloss", "tangrowth")) {
-            return new VoiceProfile(0, 0.80f, 0.90f); // warm, erfahren
+            return new VoiceProfile(0.80f, 0.90f); // warm, erfahren
         }
         if (matchesAny(speaker, "peakychu")) {
-            return new VoiceProfile(1, 1.12f, 0.90f); // klein, sanft und etwas müde
+            return new VoiceProfile(1.12f, 0.90f); // klein, sanft und etwas müde
         }
         if (matchesAny(speaker, "chef dente")) {
-            return new VoiceProfile(0, 0.90f, 0.98f); // herzlich und genussfreudig
+            return new VoiceProfile(0.90f, 0.98f); // herzlich und genussfreudig
         }
         if (matchesAny(speaker, "tinkmaster")) {
-            return new VoiceProfile(2, 0.98f, 1.06f); // selbstbewusst und tatkräftig
+            return new VoiceProfile(0.98f, 1.06f); // selbstbewusst und tatkräftig
         }
         if (matchesAny(speaker, "dj rotom")) {
-            return new VoiceProfile(3, 1.02f, 1.13f); // besonders lebhaft-elektronisch
+            return new VoiceProfile(1.02f, 1.13f); // besonders lebhaft-elektronisch
         }
         if (matchesAny(speaker, "schiggy", "squirtle")) {
-            return new VoiceProfile(2, 1.16f, 1.06f); // fröhlich und aufgeweckt
+            return new VoiceProfile(1.16f, 1.06f); // fröhlich und aufgeweckt
         }
         if (matchesAny(speaker, "bisasam", "bulbasaur")) {
-            return new VoiceProfile(1, 1.07f, 0.99f); // jung, ruhig und freundlich
+            return new VoiceProfile(1.07f, 0.99f); // jung, ruhig und freundlich
         }
         if (matchesAny(speaker, "glumanda", "charmander")) {
-            return new VoiceProfile(3, 1.12f, 1.07f); // warm und energiegeladen
+            return new VoiceProfile(1.12f, 1.07f); // warm und energiegeladen
         }
         if (matchesAny(speaker, "plinfa", "piplup")) {
-            return new VoiceProfile(2, 1.21f, 1.03f); // klein und stolz
+            return new VoiceProfile(1.21f, 1.03f); // klein und stolz
         }
         if (matchesAny(speaker, "felori", "sprigatito")) {
-            return new VoiceProfile(1, 1.14f, 0.97f); // weich und gelassen
+            return new VoiceProfile(1.14f, 0.97f); // weich und gelassen
         }
         if (matchesAny(speaker, "pikachu", "pichu")) {
-            return new VoiceProfile(3, 1.28f, 1.12f); // sehr hell, energetisch und ikonisch
+            return new VoiceProfile(1.28f, 1.12f); // sehr hell, energetisch und ikonisch
         }
         if (matchesAny(speaker, "mooslaxo", "mosslax")) {
-            return new VoiceProfile(0, 0.68f, 0.76f); // besonders schläfrig, träge und weich
+            return new VoiceProfile(0.68f, 0.76f); // besonders schläfrig, träge und weich
         }
         if (matchesAny(speaker, "mooslaxo", "mosslax", "relaxo", "dragoran", "lapras",
                 "bisaflor", "turtok", "chelterrar", "altaria", "wailord")) {
-            return new VoiceProfile(0, 0.76f, 0.88f); // groß, weich und gemütlich
+            return new VoiceProfile(0.76f, 0.88f); // groß, weich und gemütlich
         }
         if (matchesAny(speaker, "onix", "stahlos", "meistagrif", "stalobor", "geowaz",
                 "rihorn", "rizeros", "despotar", "volcanion", "groudon")) {
-            return new VoiceProfile(0, 0.66f, 0.86f); // massiv und tief
+            return new VoiceProfile(0.66f, 0.86f); // massiv und tief
         }
         if (matchesAny(speaker, "mewtu", "mewtwo", "entei", "raikou", "zapdos", "lavados",
                 "ho oh", "lugia", "rayquaza", "dialga", "palkia")) {
-            return new VoiceProfile(0, 0.72f, 0.88f); // ruhig und autoritär
+            return new VoiceProfile(0.72f, 0.88f); // ruhig und autoritär
         }
         if (matchesAny(speaker, "suicune", "mew", "celebi", "guardevoir", "galagladi",
                 "vulnona", "milotic", "arktos")) {
-            return new VoiceProfile(1, 1.00f, 0.92f); // ruhig und elegant
+            return new VoiceProfile(1.00f, 0.92f); // ruhig und elegant
         }
         if (matchesAny(speaker, "driftlon", "drifloon", "nebulak", "alpollo", "gengar",
                 "traunfugil", "zwirrlicht", "lichtel", "mimigma", "kryppuk")) {
-            return new VoiceProfile(4, 0.82f, 0.86f); // geisterhaft - tiefer und mysteriöser
+            return new VoiceProfile(0.82f, 0.86f); // geisterhaft - tiefer und mysteriöser
         }
         if (matchesAny(speaker, "rotom", "porygon", "magnetilo", "magneton", "metagross",
                 "genesect", "golbit", "golgantes")) {
-            return new VoiceProfile(3, 0.88f, 1.12f); // technisch - robotischer und präziser
+            return new VoiceProfile(0.88f, 1.12f); // technisch - robotischer und präziser
         }
         if (matchesAny(speaker, "sichlor", "scyther", "praktibalk", "timburr", "rotomurf",
                 "drilbur", "machollo", "maschock", "machomei", "panzaeron")) {
-            return new VoiceProfile(1, 0.84f, 0.98f); // rau und tatkräftig
+            return new VoiceProfile(0.84f, 0.98f); // rau und tatkräftig
         }
         if (matchesAny(speaker, "mauzi", "meowth", "karpador", "magikarp", "unratütox",
                 "trubbish", "schlaraffel", "greedent", "kleptifux")) {
-            return new VoiceProfile(2, 1.10f, 1.08f); // frech und komisch
+            return new VoiceProfile(1.10f, 1.08f); // frech und komisch
         }
         if (matchesAny(speaker, "farbeagle", "smeargle", "meister farbeagle", "smearguru")) {
-            return new VoiceProfile(2, 1.02f, 0.96f); // kreativ und gelassen
+            return new VoiceProfile(1.02f, 0.96f); // kreativ und gelassen
         }
         if (matchesAny(speaker, "evoli", "eevee", "togepi", "emolga", "dedenne",
                 "pummeluff", "wuffels", "hoppspross", "knospi", "mobai", "riolu")) {
-            return new VoiceProfile(2, 1.18f, 1.06f); // klein, jung und lebhaft
+            return new VoiceProfile(1.18f, 1.06f); // klein, jung und lebhaft
         }
         if (matchesAny(speaker, "meikro", "rookidee", "staralili", "taubsi", "habitak",
                 "waumpel", "raupy", "hornliu", "wommel")) {
-            return new VoiceProfile(3, 1.30f, 1.14f); // sehr klein, piepsig und flink
+            return new VoiceProfile(1.30f, 1.14f); // sehr klein, piepsig und flink
         }
 
         // Auch noch nicht bekannte Figuren behalten anhand ihres Namens dauerhaft
         // ein klar unterscheidbares, Pokémon-typisches Profil.
         switch (Math.floorMod(speaker.hashCode(), 5)) {
             case 0:
-                return new VoiceProfile(0, 0.65f, 0.84f); // sehr tief und langsam
+                return new VoiceProfile(0.65f, 0.84f); // sehr tief und langsam
             case 1:
-                return new VoiceProfile(1, 0.82f, 0.92f); // tief und gemütlich
+                return new VoiceProfile(0.82f, 0.92f); // tief und gemütlich
             case 2:
-                return new VoiceProfile(2, 1.05f, 1.02f); // neutral-freundlich
+                return new VoiceProfile(1.05f, 1.02f); // neutral-freundlich
             case 3:
-                return new VoiceProfile(3, 1.20f, 1.11f); // hell und lebhaft
+                return new VoiceProfile(1.20f, 1.11f); // hell und lebhaft
             default:
-                return new VoiceProfile(4, 1.28f, 1.16f); // sehr hell und quirlig
+                return new VoiceProfile(1.28f, 1.16f); // sehr hell und quirlig
         }
     }
 
@@ -1099,7 +959,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private String voiceProfileLabel(VoiceProfile profile) {
-        float pitch = SpeakerVoice.pitch(normalize(currentSpeaker), profile.pitch, 1f);
+        float pitch = SpeakerVoice.pitch(normalize(currentSpeaker), profile.pitch);
         if (pitch <= 0.88f) return "SEHR TIEF";
         if (pitch <= 0.96f) return "TIEF";
         if (pitch >= 1.20f) return "SEHR HELL";
@@ -1132,12 +992,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private static final class VoiceProfile {
-        final int voiceSlot;
         final float pitch;
         final float rateFactor;
 
-        VoiceProfile(int voiceSlot, float pitch, float rateFactor) {
-            this.voiceSlot = voiceSlot;
+        VoiceProfile(float pitch, float rateFactor) {
             this.pitch = pitch;
             this.rateFactor = rateFactor;
         }
@@ -1180,48 +1038,97 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         statusText.setTextColor(ContextCompat.getColor(this, good ? R.color.leaf : R.color.coral));
     }
 
-    // === Sound Feedback ===
-
-    private void playNewTextSound() {
-        if (!soundsEnabled || toneGenerator == null) return;
-        // Short pleasant chime: C6 note (1047 Hz) for 80ms
-        toneGenerator.startTone(ToneGenerator.TONE_CDMA_KEYPAD_VOLUME_KEY_LITE, 80);
+    private void loadVoiceAssignments(SharedPreferences prefs) {
+        try {
+            JSONObject saved = new JSONObject(prefs.getString(KEY_VOICE_ASSIGNMENTS, "{}"));
+            java.util.Iterator<String> keys = saved.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                voiceAssignments.put(key, saved.getString(key));
+            }
+        } catch (JSONException ignored) { }
     }
 
-    private void playSpeakerChangeSound() {
-        if (!soundsEnabled || toneGenerator == null) return;
-        // Short whoosh/blip: two-tone sound
-        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 100);
+    private void saveVoiceAssignments() {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_VOICE_ASSIGNMENTS, new JSONObject(voiceAssignments.snapshot()).toString()).apply();
     }
 
-    private void toggleSounds() {
-        soundsEnabled = !soundsEnabled;
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        prefs.edit().putBoolean(KEY_SOUNDS_ENABLED, soundsEnabled).apply();
-    }
-
-    private void updateSoundsToggleButton(MaterialButton button) {
-        if (soundsEnabled) {
-            button.setText("EIN");
-            button.setIconResource(R.drawable.ic_volume);
-            button.setBackgroundTintList(getColorStateList(R.color.gold));
-        } else {
-            button.setText("AUS");
-            button.setIconResource(R.drawable.ic_volume_off);
-            button.setBackgroundTintList(getColorStateList(R.color.navy_light));
+    private void showVoiceSettings() {
+        stopSpeech();
+        invalidateAnalysis();
+        voiceSettingsOpen = true;
+        String speaker = currentSpeaker;
+        List<String> names = new ArrayList<>();
+        for (Voice voice : germanVoices) names.add(voice.getName());
+        String selected = voiceAssignments.choose(speaker, names);
+        saveVoiceAssignments();
+        String[] labels = new String[germanVoices.size()];
+        for (int i = 0; i < labels.length; i++) {
+            Voice voice = germanVoices.get(i);
+            labels[i] = (i + 1) + ". " + voice.getName() + " (" + voice.getLocale().toLanguageTag() + ")";
         }
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Stimme für " + speaker)
+                .setSingleChoiceItems(labels, names.indexOf(selected), (d, which) -> {
+                    stopSpeech();
+                    voiceAssignments.put(speaker, names.get(which));
+                    saveVoiceAssignments();
+                    cachedSpeaker = "";
+                    previewVoice(speaker);
+                })
+                .setPositiveButton("Fertig", null)
+                .setNeutralButton("Ä/Ö/Ü testen", null)
+                .setNegativeButton("Android-TTS", (d, which) -> {
+                    try { startActivity(new Intent("com.android.settings.TTS_SETTINGS")); }
+                    catch (android.content.ActivityNotFoundException unavailable) {
+                        showStatus("Bitte Android-Einstellungen für Sprachausgabe öffnen", false);
+                    }
+                }).create();
+        dialog.setOnDismissListener(d -> {
+            stopSpeech();
+            voiceSettingsOpen = false;
+            invalidateAnalysis();
+        });
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+                .setOnClickListener(view -> previewVoice(speaker)));
+        dialog.show();
+    }
+
+    private void previewVoice(String speaker) {
+        if (germanVoices.isEmpty()) {
+            showStatus("Deutsche Offline-Stimme bitte in Android installieren", false);
+            return;
+        }
+        stopSpeech();
+        applyVoiceForSpeaker(speaker);
+        if (!ttsReady) return;
+        Bundle params = new Bundle();
+        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume);
+        // Hörprobe gehört nicht zur Dialoghistorie.
+        textToSpeech.speak("Schön, dass du zurück bist! Äpfel, Öl, Übermut und die große Straße.",
+                TextToSpeech.QUEUE_FLUSH, params, "voice-preview");
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         foreground = true;
+        if (textToSpeech != null && speechInitialized) {
+            textToSpeech.setLanguage(Locale.GERMANY);
+            loadGermanVoices();
+            ttsReady = !germanVoices.isEmpty()
+                    && textToSpeech.setVoice(germanVoices.get(0)) == TextToSpeech.SUCCESS;
+            cachedSpeaker = "";
+        }
         hideSystemBars();
     }
 
     @Override
     protected void onPause() {
         foreground = false;
+        focusRequest++;
+        focusRing.setVisibility(View.GONE);
         invalidateAnalysis();
         stopSpeech();
         super.onPause();
@@ -1270,10 +1177,68 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                         return true;
                     }
                 });
+        GestureDetector tapDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onDown(MotionEvent event) { return true; }
+            @Override public boolean onSingleTapUp(MotionEvent event) {
+                previewView.performClick();
+                focusAt(event.getX(), event.getY());
+                return true;
+            }
+            @Override public void onLongPress(MotionEvent event) {
+                if (camera == null) return;
+                focusRequest++;
+                camera.getCameraControl().cancelFocusAndMetering();
+                focusRing.setVisibility(View.GONE);
+                showStatus("Autofokus aktiv", true);
+            }
+        });
         previewView.setOnTouchListener((v, event) -> {
             scaleGestureDetector.onTouchEvent(event);
+            if (event.getPointerCount() > 1 || scaleGestureDetector.isInProgress()) {
+                MotionEvent cancel = MotionEvent.obtain(event);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                tapDetector.onTouchEvent(cancel);
+                cancel.recycle();
+            } else tapDetector.onTouchEvent(event);
             return true;
         });
+    }
+
+    private void showFocusRing(int color) {
+        android.graphics.drawable.GradientDrawable border = new android.graphics.drawable.GradientDrawable();
+        border.setCornerRadius(dpToPx(10));
+        border.setStroke(dpToPx(2), ContextCompat.getColor(this, color));
+        focusRing.setBackground(border);
+        focusRing.setVisibility(View.VISIBLE);
+    }
+
+    private void focusAt(float x, float y) {
+        if (camera == null || !foreground) return;
+        MeteringPoint point = previewView.getMeteringPointFactory().createPoint(x, y);
+        FocusMeteringAction action = new FocusMeteringAction.Builder(point,
+                FocusMeteringAction.FLAG_AF | FocusMeteringAction.FLAG_AE).disableAutoCancel().build();
+        if (!camera.getCameraInfo().isFocusMeteringSupported(action)) {
+            showStatus("Fokuspunkt wird von dieser Kamera nicht unterstützt", false);
+            return;
+        }
+        final int request = ++focusRequest;
+        focusRing.setTranslationX(Math.max(0f, Math.min(previewView.getWidth() - dpToPx(48), x - dpToPx(24))));
+        focusRing.setTranslationY(Math.max(0f, Math.min(previewView.getHeight() - dpToPx(48), y - dpToPx(24))));
+        showFocusRing(R.color.gold);
+        showStatus("Fokussiere …", true);
+        ListenableFuture<FocusMeteringResult> result = camera.getCameraControl().startFocusAndMetering(action);
+        result.addListener(() -> {
+            if (destroyed || !foreground || request != focusRequest) return;
+            try {
+                boolean focused = result.get().isFocusSuccessful();
+                showFocusRing(focused ? R.color.leaf : R.color.coral);
+                showStatus(focused ? "Fokus gesetzt · lange drücken für Auto"
+                        : "Fokus unscharf · erneut auf Text tippen", focused);
+            } catch (Exception failure) {
+                showFocusRing(R.color.coral);
+                showStatus("Fokus fehlgeschlagen · erneut tippen", false);
+            }
+        }, ContextCompat.getMainExecutor(this));
     }
 
     @Override
@@ -1288,9 +1253,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
         if (textRecognizer != null && !ocrBusy.get()) textRecognizer.close();
         if (cameraExecutor != null) cameraExecutor.shutdown();
-        if (toneGenerator != null) {
-            toneGenerator.release();
-            toneGenerator = null;
-        }
+
     }
 }

@@ -8,6 +8,44 @@ import java.util.regex.Pattern;
 final class DialogueText {
     private DialogueText() {}
 
+    /** Wortgrenzen erhalten Umlaute und verhindern Treffer mitten in Wörtern. */
+    static String unreadAfter(String full, String previous) {
+        String visible = Normalizer.normalize(full, Normalizer.Form.NFC);
+        String normalized = TextRules.normalize(visible);
+        String heard = TextRules.normalize(previous);
+        if (normalized.isEmpty()) return "";
+        if (heard.isEmpty()) return visible;
+        if (normalized.equals(heard)) return "";
+        String[] words = normalized.split(" ");
+        int covered = 0;
+        if (normalized.startsWith(heard + " ")) {
+            covered = heard.split(" ").length;
+        } else {
+            // KMP: längste Wortüberlappung ohne quadratische Teilstring-Erzeugung.
+            int[] fallback = new int[words.length];
+            for (int i = 1, matched = 0; i < words.length; i++) {
+                while (matched > 0 && !words[i].equals(words[matched])) matched = fallback[matched - 1];
+                if (words[i].equals(words[matched])) matched++;
+                fallback[i] = matched;
+            }
+            int matched = 0;
+            for (String word : heard.split(" ")) {
+                while (matched > 0 && (matched == words.length || !word.equals(words[matched]))) {
+                    matched = fallback[matched - 1];
+                }
+                if (word.equals(words[matched])) matched++;
+                if (matched == words.length && matched >= 3) return "";
+            }
+            // Einzelne häufige Wörter sind kein Beleg für ein Scrollfenster.
+            if (matched >= 3) covered = matched;
+        }
+        if (covered == 0) return visible;
+        if (covered == words.length) return "";
+        Matcher matcher = Pattern.compile("[\\p{L}\\p{N}]+").matcher(visible);
+        for (int i = 0; i < covered; i++) if (!matcher.find()) return visible;
+        return visible.substring(matcher.end()).replaceFirst("^[\\s.,!?…:;]+", "").trim();
+    }
+
     static boolean sameDialogue(String previous, String current) {
         String left = TextRules.normalize(previous);
         String right = TextRules.normalize(current);

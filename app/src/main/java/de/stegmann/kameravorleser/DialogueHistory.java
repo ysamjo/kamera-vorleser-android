@@ -35,6 +35,22 @@ final class DialogueHistory {
         return false;
     }
 
+    /** Laufende Fenster decken die nächste Ausgabe in derselben seriellen Queue ab. */
+    String unreadText(String speaker, String visible) {
+        if (wasSpoken(speaker, visible)) return "";
+        if (repeatKey != null && matches(repeatKey, key(speaker, visible))) return visible;
+        String result = visible;
+        String prefix = TextRules.normalize(speaker) + SEPARATOR;
+        List<String> coverage = new ArrayList<>(entries);
+        coverage.addAll(pending);
+        for (String entry : coverage) {
+            if (!entry.startsWith(prefix)) continue;
+            String candidate = DialogueText.unreadAfter(visible, entry.substring(prefix.length()));
+            if (candidate.length() < result.length()) result = candidate;
+        }
+        return result;
+    }
+
     static boolean matches(String entry, String candidate) {
         int delimiter = entry.indexOf(SEPARATOR);
         int other = candidate.indexOf(SEPARATOR);
