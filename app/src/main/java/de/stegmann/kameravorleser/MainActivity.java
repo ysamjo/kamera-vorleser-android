@@ -55,11 +55,8 @@ import static de.stegmann.kameravorleser.TextRules.*;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -68,7 +65,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.json.JSONArray;
 import org.json.JSONException;
-import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity implements TextToSpeech.OnInitListener {
     private static final long ANALYSIS_INTERVAL_MS = 180;
@@ -85,7 +81,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final long STABLE_WINDOW_MS = 1100L;
     private static final String NARRATOR = "Erzähler";
     private static final String PREFS_NAME = "KameraVorleserPrefs";
-    private static final String KEY_SPEAKER_RATES = "speakerRates";
     private static final String KEY_SOUNDS_ENABLED = "soundsEnabled";
 
     // OCR & Text-Erkennungs-Schwellwerte
@@ -110,13 +105,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     // TTS/Voice-Schwellwerte
     // Extreme Tonhöhen/Tempi verzerren installierte Offline-Stimmen.
-    private static final float PITCH_MULTIPLIER = 0.75f;
-    private static final float PITCH_MIN = 0.82f;
-    private static final float PITCH_MAX = 1.25f;
-    private static final float RATE_MULTIPLIER = 0.85f;
-    private static final float RATE_MIN = 0.85f;
-    private static final float RATE_MAX = 1.35f;
-    private static final float VOICE_CACHE_THRESHOLD = 0.02f; // Nur Voice ändern wenn Differenz > 2%
     private static final int VIBRATION_DURATION_MS = 35; // Vibration bei neuem Text: 35ms
 
     private PreviewView previewView;
@@ -153,9 +141,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private float volume = 0.8f;
     private Vibrator vibrator;
 
-    // Per-speaker speech rate caching
-    private Map<String, Float> speakerRates = new LinkedHashMap<>();
-    private Map<String, Float> speakerBaseRates = new LinkedHashMap<>();
     private String previousSpeaker = "";
 
     // Dialog & Satzfluss-Tracking (Wachstum, Klick-Erweiterung, Duplikatvermeidung)
@@ -240,9 +225,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         textToSpeech = new TextToSpeech(this, this);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
 
-        // Load per-speaker rates from SharedPreferences
-        loadSpeakerRates();
-
         // Load sound preference
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         loadDialogueHistory(prefs);
@@ -283,8 +265,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             invalidateAnalysis();
             stopSpeech();
             // Nur die sichtbare Zeile erneut zulassen, die Historie bleibt erhalten.
-            dialogueHistory.forget(currentSpeaker, recognizedText.getText().toString());
-            saveDialogueHistory();
+            dialogueHistory.allowRepeat(currentSpeaker, recognizedText.getText().toString());
             resetLastSpoken();
             showStatus("Aktueller Dialog kann erneut gelesen werden", true);
         });
@@ -294,20 +275,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (!fromUser) return;
 
-                // Calculate new global speech rate
-                float oldGlobalRate = speechRate;
                 speechRate = 0.75f + (progress / 100f);
                 prefs.edit().putFloat("speechRate", speechRate).apply();
-
-                // Global multiplier: adjust ALL cached speaker rates proportionally
-                if (oldGlobalRate > 0 && !speakerRates.isEmpty()) {
-                    float ratio = speechRate / oldGlobalRate;
-                    for (Map.Entry<String, Float> entry : speakerRates.entrySet()) {
-                        float scaled = Math.max(RATE_MIN, Math.min(RATE_MAX, entry.getValue() * ratio));
-                        entry.setValue(scaled);
-                    }
-                    saveSpeakerRates();
-                }
             }
 
             @Override public void onStartTrackingTouch(SeekBar seekBar) { }
@@ -336,6 +305,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     @Override
     public void onInit(int status) {
+        // Auch ein synchroner Init-Callback muss die Zuweisung des TTS-Objekts abwarten.
+        new android.os.Handler(getMainLooper()).post(() -> initializeSpeech(status));
+    }
+
+    private void initializeSpeech(int status) {
         if (destroyed) return;
         if (status != TextToSpeech.SUCCESS) {
             showStatus("Sprachausgabe ist nicht verfügbar", false);
@@ -369,14 +343,12 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     private void stopSpeech() {
         // Unterbrochene Zeilen sind nicht vollständig vorgelesen und dürfen erneut starten.
-        boolean changed = false;
         for (String key : speechQueue.drain()) {
-            changed |= dialogueHistory.forgetKey(key);
+            dialogueHistory.finish(key, false);
             if (key.equals(DialogueHistory.key(lastSpokenSpeaker, lastSpokenNormalized))) {
                 resetLastSpoken();
             }
         }
-        if (changed) saveDialogueHistory();
         // Vor stop() entwerten: Engines dürfen sofort oder später zurückrufen.
         if (textToSpeech != null) textToSpeech.stop();
     }
@@ -389,11 +361,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private void finishSpeech(String id, boolean failed) {
-        runOnUiThread(() -> {
+        new android.os.Handler(getMainLooper()).post(() -> {
             String key = speechQueue.finish(id);
             if (key == null || destroyed) return;
+            if (dialogueHistory.finish(key, !failed)) saveDialogueHistory();
             if (failed) {
-                if (dialogueHistory.forgetKey(key)) saveDialogueHistory();
                 if (key.equals(DialogueHistory.key(lastSpokenSpeaker, lastSpokenNormalized))) {
                     resetLastSpoken();
                 }
@@ -558,13 +530,16 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         String detectedSpeaker = detectSpeaker(result, storyLines, frameWidth, frameHeight);
         if (detectedSpeaker != null) {
+            if (!normalize(currentSpeaker).equals(normalize(detectedSpeaker))) invalidateAnalysis();
             currentSpeaker = detectedSpeaker;
             lastSpeakerSeenAt = now;
-            String speakerKey = normalize(detectedSpeaker);
-            storyLines.removeIf(line -> line.normalized.equals(speakerKey));
         } else if (now - lastSpeakerSeenAt > SPEAKER_HOLD_MS) {
+            if (!currentSpeaker.equals(NARRATOR)) invalidateAnalysis();
             currentSpeaker = NARRATOR;
         }
+
+        String speakerKey = normalize(currentSpeaker);
+        storyLines.removeIf(line -> line.normalized.equals(speakerKey));
 
         if (storyLines.isEmpty()) {
             clearPendingStoryIfStale(now);
@@ -579,6 +554,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (visibleStory.isBlank()) {
             clearPendingStoryIfStale(now);
             return;
+        }
+        if (detectedSpeaker == null && !currentSpeaker.equals(NARRATOR)
+                && !DialogueText.sameDialogue(recognizedText.getText().toString(), visibleStory)) {
+            currentSpeaker = NARRATOR;
+            invalidateAnalysis();
         }
         String normalizedStory = normalize(visibleStory);
 
@@ -602,6 +582,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             showStatus("Prüfe Dialog …", true);
             return;
         }
+
+        if (speechQueue.size() > 0 && !normalize(currentSpeaker).equals(cachedSpeaker)) stopSpeech();
+        if (dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) return;
 
         // Klick-Erweiterung: Wenn der Text nach einem Klick um einen neuen Satzteil gewachsen ist
         boolean isExtension = !lastSpokenNormalized.isEmpty()
@@ -633,34 +616,26 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             lastSpokenNormalized = normalizedStory;
             lastSpokenSpeaker = normalize(currentSpeaker);
             lastSpokenAt = now;
-            dialogueHistory.remember(currentSpeaker, normalizedStory);
-            saveDialogueHistory();
             showStatus("Lese vor …", true);
             return;
         }
 
-        // Duplikatprüfung: Wurde dieser Dialog bereits gesprochen?
-        if (dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) return;
-
         // Neuen Dialog vollständig und flüssig sprechen
-        if (ttsReady && speechQueue.size() < MAX_QUEUED_UTTERANCES) {
+        if (ttsReady && (speechQueue.size() < MAX_QUEUED_UTTERANCES
+                || !normalize(currentSpeaker).equals(cachedSpeaker))) {
             if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
             lastSpokenVisible = visibleStory;
             lastSpokenNormalized = normalizedStory;
             lastSpokenSpeaker = normalize(currentSpeaker);
             lastSpokenAt = now;
-            dialogueHistory.remember(currentSpeaker, normalizedStory);
-            saveDialogueHistory();
             showStatus("Lese vor …", true);
         }
     }
 
     private boolean speak(String text, String speaker, String dialogueKey) {
         if (!ttsReady || paused || !foreground || destroyed) return false;
-        String limited = text.length() > 900 ? text.substring(0, 900) : text;
-
         // Aussprache-Wörterbuch anwenden
-        String corrected = PronunciationDictionary.apply(limited);
+        String corrected = PronunciationDictionary.apply(text);
 
         // Emotionale Variation basierend auf Satzzeichen
         float emotionPitchMod = 1.0f;
@@ -677,6 +652,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         // Natürliche Pausen einfügen
         String withPauses = PronunciationDictionary.addNaturalPauses(corrected);
+
+        if (withPauses.length() > TextToSpeech.getMaxSpeechInputLength()) {
+            showStatus("Dialog ist für die Sprachausgabe zu lang", false);
+            return false;
+        }
 
         // Neue Figur: veraltete Warteschlangen-Einträge dürfen nicht die neue Stimme erben.
         if (speechQueue.size() > 0 && !normalize(speaker).equals(cachedSpeaker)) {
@@ -707,6 +687,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             showStatus("Sprachausgabe fehlgeschlagen – versuche erneut", false);
             return false;
         }
+        dialogueHistory.begin(DialogueHistory.key(speaker, dialogueKey));
         return true;
     }
 
@@ -954,7 +935,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                             TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED))) continue;
             allGerman.add(voice);
         }
-        // Zuerst deutsche DE-Stimmen, dann nach Qualität und Latenz sortieren.
+        if (allGerman.stream().anyMatch(voice -> "DE".equalsIgnoreCase(voice.getLocale().getCountry()))) {
+            allGerman.removeIf(voice -> !"DE".equalsIgnoreCase(voice.getLocale().getCountry()));
+        }
+        // Stimmen derselben Sprachregion nach Qualität und Latenz sortieren.
         allGerman.sort(Comparator
                 .comparingInt((Voice voice) -> "DE".equalsIgnoreCase(voice.getLocale().getCountry()) ? 0 : 1)
                 .thenComparing(Comparator.comparingInt(Voice::getQuality).reversed())
@@ -974,19 +958,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
         previousSpeaker = key;
 
-        // Get or create per-speaker rate
-        float speakerRate = getSpeakerRate(key, profile);
-
-        // Auch Pokémon derselben Kategorie erhalten eine dezente individuelle Tonlage.
-        float identityPitch = (Math.floorMod(key.hashCode(), 7) - 3) * 0.018f;
-        float targetPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX,
-                (effectivePitch(profile) + identityPitch) * emotionPitchMod));
-        float targetRate = Math.max(RATE_MIN, Math.min(RATE_MAX, speakerRate * emotionRateMod));
+        float targetPitch = SpeakerVoice.pitch(key, profile.pitch, emotionPitchMod);
+        float targetRate = SpeakerVoice.rate(key, profile.rateFactor, speechRate, emotionRateMod);
 
         // Voice-Caching: Nur ändern wenn wirklich nötig
         boolean needsUpdate = !cachedSpeaker.equals(key)
-                || Math.abs(cachedPitch - targetPitch) > VOICE_CACHE_THRESHOLD
-                || Math.abs(cachedRate - targetRate) > VOICE_CACHE_THRESHOLD;
+                || Float.compare(cachedPitch, targetPitch) != 0
+                || Float.compare(cachedRate, targetRate) != 0;
 
         if (needsUpdate) {
             if (!germanVoices.isEmpty()) {
@@ -998,8 +976,12 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 }
             }
 
-            textToSpeech.setPitch(targetPitch);
-            textToSpeech.setSpeechRate(targetRate);
+            if (textToSpeech.setPitch(targetPitch) != TextToSpeech.SUCCESS
+                    || textToSpeech.setSpeechRate(targetRate) != TextToSpeech.SUCCESS) {
+                ttsReady = false;
+                showStatus("Stimmprofil konnte nicht eingestellt werden", false);
+                return;
+            }
 
             cachedSpeaker = key;
             cachedPitch = targetPitch;
@@ -1008,24 +990,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private float getSpeakerRate(String speakerKey, VoiceProfile profile) {
-        // If we have a cached rate for this speaker, use it
-        if (speakerRates.containsKey(speakerKey)) {
-            return Math.max(RATE_MIN, Math.min(RATE_MAX, speakerRates.get(speakerKey)));
-        }
-
-        // Otherwise, calculate from profile's base rate factor and current global rate
-        float baseRateFactor = profile.rateFactor;
-        speakerBaseRates.put(speakerKey, baseRateFactor);
-
-        // Calculate effective rate: global rate * (1 + (baseFactor - 1) * multiplier)
-        float calculatedRate = speechRate * (1.0f + (baseRateFactor - 1.0f) * RATE_MULTIPLIER);
-        calculatedRate = Math.max(RATE_MIN, Math.min(RATE_MAX, calculatedRate));
-
-        // Cache it
-        speakerRates.put(speakerKey, calculatedRate);
-        saveSpeakerRates();
-
-        return calculatedRate;
+        return SpeakerVoice.rate(speakerKey, profile.rateFactor, speechRate, 1f);
     }
 
     private VoiceProfile voiceProfileFor(String speaker) {
@@ -1129,28 +1094,16 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
     }
 
-    private float effectivePitch(VoiceProfile profile) {
-        // Stimmprofile bleiben unterscheidbar, ohne die Sprache unnatürlich zu verzerren.
-        float pitch = 1.0f + (profile.pitch - 1.0f) * PITCH_MULTIPLIER;
-        return Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch));
-    }
-
     private float effectiveRate(VoiceProfile profile) {
-        // Use speaker-specific rate if available, otherwise calculate from profile
-        String speakerKey = normalize(currentSpeaker);
-        if (speakerRates.containsKey(speakerKey)) {
-            return Math.max(RATE_MIN, Math.min(RATE_MAX, speakerRates.get(speakerKey)));
-        }
-        float rate = speechRate * (1.0f + (profile.rateFactor - 1.0f) * RATE_MULTIPLIER);
-        return Math.max(RATE_MIN, Math.min(RATE_MAX, rate));
+        return getSpeakerRate(normalize(currentSpeaker), profile);
     }
 
     private String voiceProfileLabel(VoiceProfile profile) {
-        float pitch = effectivePitch(profile);
-        if (pitch <= 0.64f) return "SEHR TIEF";
-        if (pitch <= 0.82f) return "TIEF";
-        if (pitch >= 1.43f) return "SEHR HELL";
-        if (pitch >= 1.20f) return "HELL";
+        float pitch = SpeakerVoice.pitch(normalize(currentSpeaker), profile.pitch, 1f);
+        if (pitch <= 0.88f) return "SEHR TIEF";
+        if (pitch <= 0.96f) return "TIEF";
+        if (pitch >= 1.20f) return "SEHR HELL";
+        if (pitch >= 1.08f) return "HELL";
         if (effectiveRate(profile) >= speechRate * 1.08f) return "FLOTT";
         return "SANFT";
     }
@@ -1251,39 +1204,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private void showStatus(String message, boolean good) {
         statusText.setText("●  " + message);
         statusText.setTextColor(ContextCompat.getColor(this, good ? R.color.leaf : R.color.coral));
-    }
-
-    // === Per-Speaker Rate Persistence ===
-
-    private void loadSpeakerRates() {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        String json = prefs.getString(KEY_SPEAKER_RATES, "");
-        if (!json.isEmpty()) {
-            try {
-                JSONObject obj = new JSONObject(json);
-                speakerRates.clear();
-                Iterator<String> keys = obj.keys();
-                while (keys.hasNext()) {
-                    String key = keys.next();
-                    speakerRates.put(key, (float) obj.getDouble(key));
-                }
-            } catch (JSONException e) {
-                // Ignore parsing errors
-            }
-        }
-    }
-
-    private void saveSpeakerRates() {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        JSONObject obj = new JSONObject();
-        try {
-            for (Map.Entry<String, Float> entry : speakerRates.entrySet()) {
-                obj.put(entry.getKey(), entry.getValue());
-            }
-            prefs.edit().putString(KEY_SPEAKER_RATES, obj.toString()).apply();
-        } catch (JSONException e) {
-            // Ignore
-        }
     }
 
     // === Sound Feedback ===

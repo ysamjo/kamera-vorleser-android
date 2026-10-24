@@ -21,4 +21,14 @@ public class DialogueTextTest {
     @Test public void preservesUmlauts() {
         assertEquals("Schön, dass du zurück bist!", DialogueText.withoutSpeaker("Evoli: Schön, dass du zurück bist!", "Evoli"));
     }
+
+    @Test public void normalizesNameAndTextBeforeRemovingLabel() {
+        assertEquals("Schön!", DialogueText.withoutSpeaker("Flabe\u0301be\u0301: Scho\u0308n!", "Flabébé"));
+    }
+
+    @Test public void missingLabelDoesNotCarrySpeakerIntoDifferentDialogue() {
+        assertTrue(DialogueText.sameDialogue("Schön, dass du hier bist!", "Scho\u0308n, dass du hier bist!"));
+        assertTrue(DialogueText.sameDialogue("Wir gehen jetzt", "Wir gehen jetzt nach Hause."));
+        assertFalse(DialogueText.sameDialogue("Ich helfe dir beim Bauen.", "Willkommen auf der Insel!"));
+    }
 }

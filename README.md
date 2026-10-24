@@ -44,7 +44,7 @@ abgebrochener Ausgaben beeinflussen neue Ausgaben nicht. Fehlerhafte Ausgaben
 werden erneut versuchbar; Pause und Hintergrundwechsel stoppen die Sprache.
 
 GitHub Actions prüft jeden Push auf `main` und jeden Pull Request mit JDK 21,
-Debug-Build, Android Lint und JUnit. Prüfberichte und Debug-APK werden als
+Debug-/Release-APK und App-Bundles, Android Lint und JUnit für beide Varianten. Prüfberichte und Debug-APK werden als
 Workflow-Artefakte bereitgestellt.
 
 Es werden ausschließlich installierte deutsche Offline-Stimmen ausgewählt, bevorzugt de-DE und anschließend nach Qualität und Latenz sortiert. Sprecherwechsel brechen eine eventuell noch laufende vorherige Ausgabe ab, damit neue Dialoge das neue Stimmenprofil erhalten. Moderate Tonhöhen und Tempi vermeiden unnötig hölzernen Klang; die tatsächliche Sprachqualität hängt von den installierten TTS-Stimmen ab. Zusammengesetzte OCR-Umlaute werden vor der Sprachausgabe normalisiert. Fehlt eine solche Stimme, zeigt die App einen
@@ -60,3 +60,17 @@ Auf einem ausgewählten, entsperrten Testgerät ausführen:
 `ANDROID_SERIAL=<ADB-Gerät> ./gradlew :app:connectedDebugAndroidTest`.
 Lifecycle-Tests werden bei gesperrtem/schlafendem Gerät ausdrücklich übersprungen.
 Ein OCR-Smoke-Test ersetzt keinen realen Pokopia-Kameratest oder Hörtest.
+
+Die Historie speichert nur per TTS-Abschluss bestätigte Dialoge. Laufende Texte
+bleiben bis zum Abschluss im Arbeitsspeicher; ein Prozessabbruch verhindert so
+nicht den nächsten Versuch. „Neu lesen“ gibt die sichtbare Zeile einmal frei,
+ohne die gespeicherte Historie zu löschen. OCR-Umlaute werden bereits für
+Sprecherkennung und Dialogvergleich in NFC normalisiert.
+
+Jede Sprecherkennung erhält eine stabile Variation von Tonlage und Tempo;
+die Berechnung hängt weder von der Reihenfolge der Dialoge noch von früheren
+Reglerbewegungen ab. Wenn de-DE-Offline-Stimmen vorhanden sind, werden nur diese
+verwendet; sonst bleiben andere installierte deutsche Offline-Stimmen zulässig.
+Die hörbare Unterscheidbarkeit aller Figuren hängt von der Engine ab und ist
+nicht durch unterschiedliche Zahlenprofile garantiert. Bei einem neuen Dialog
+ohne erkanntes Namensschild fällt die App auf den Erzähler zurück.
