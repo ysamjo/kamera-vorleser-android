@@ -603,7 +603,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 String trimmedLast = lastSpokenVisible != null ? lastSpokenVisible.trim() : "";
                 char lastChar = !trimmedLast.isEmpty() ? trimmedLast.charAt(trimmedLast.length() - 1) : ' ';
                 if (lastChar == '.' || lastChar == '!' || lastChar == '?' || lastChar == '…' || lastChar == ':') {
-                    String suffix = extractExtensionSuffix(visibleStory, lastSpokenVisible);
+                    String suffix = DialogueText.extensionSuffix(visibleStory, lastSpokenVisible);
                     if (!suffix.isBlank()) {
                         if (!speak(suffix, currentSpeaker, normalizedStory)) return;
                     }
@@ -1153,32 +1153,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
         return StoryTextAssembler.assemble(input);
     }
-
-    private String extractExtensionSuffix(String fullVisible, String prefixVisible) {
-        String fullNorm = normalize(fullVisible);
-        String prefixNorm = normalize(prefixVisible);
-        if (!fullNorm.startsWith(prefixNorm)) {
-            return fullVisible;
-        }
-        String[] fullWords = fullVisible.trim().split("\\s+");
-        String[] prefixWords = prefixVisible.trim().split("\\s+");
-        int prefixCount = prefixWords.length;
-        if (prefixCount < fullWords.length) {
-            StringBuilder suffix = new StringBuilder();
-            for (int i = prefixCount; i < fullWords.length; i++) {
-                if (suffix.length() > 0) suffix.append(" ");
-                suffix.append(fullWords[i]);
-            }
-            return suffix.toString();
-        }
-        return "";
-    }
-
-
-
-
-
-
 
     private void loadDialogueHistory(SharedPreferences prefs) {
         List<String> saved = new ArrayList<>();

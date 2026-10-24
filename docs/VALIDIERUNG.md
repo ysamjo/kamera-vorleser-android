@@ -178,7 +178,7 @@ PR-Stand und belegt keine Validierung der nachstehenden Korrekturen.
 
 ### Lokale Prüfungen
 
-- 35 JUnit-Testmethoden erfolgreich mit JDK 21/JUnit 4.13.2, direkt per `javac`
+- 36 JUnit-Testmethoden erfolgreich mit JDK 21/JUnit 4.13.2, direkt per `javac`
   und `JUnitCore` ausgeführt. Sämtliche vorhandenen Unit-Testklassen enthalten;
   keine Netzwerkzugriffe. Neue Fälle prüfen laufende/abgeschlossene Historie,
   Wiederholung nach OCR-Abweichung und Abbruch, Neustart-Snapshots, lange Texte,
@@ -241,3 +241,9 @@ in `/tmp/pokopia-review` und werden auf dem bestehenden PR-Branch veröffentlich
   rückwirkend nicht von tatsächlich gehörten Einträgen unterscheiden.
 - API-23/26/30-Kompatibilität und subjektive Natürlichkeit sind ohne Gerätetests
   nicht nachgewiesen. Keine Freigabe als vollständig am Pixel getestet ableiten.
+
+Zusätzlicher Randfall der Abschlussprüfung: Die alte Erweiterungslogik zählte
+nur durch Leerzeichen getrennte Wörter. Bei `Hallo!Wie geht es?` nach `Hallo!`
+verschwand dadurch „Wie“; bei Erweiterung des letzten Worts konnte die Ausgabe
+ganz ausfallen. `DialogueText.extensionSuffix` zählt nun Unicode-Wörter und
+liest bei fehlender Wortgrenze den vollständigen Text. Eigener Regressionstest.

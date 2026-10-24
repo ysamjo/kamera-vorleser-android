@@ -31,4 +31,11 @@ public class DialogueTextTest {
         assertTrue(DialogueText.sameDialogue("Wir gehen jetzt", "Wir gehen jetzt nach Hause."));
         assertFalse(DialogueText.sameDialogue("Ich helfe dir beim Bauen.", "Willkommen auf der Insel!"));
     }
+
+    @Test public void extensionsPreserveWordsAfterPunctuationAndInsideLastWord() {
+        assertEquals("Wie geht es?", DialogueText.extensionSuffix("Hallo!Wie geht es?", "Hallo!"));
+        assertEquals("Komm mit!", DialogueText.extensionSuffix("Schön, dass du da bist. Komm mit!", "Schön, dass du da bist."));
+        assertEquals("Ich sehe den Baumstamm.", DialogueText.extensionSuffix("Ich sehe den Baumstamm.", "Ich sehe den Baum."));
+        assertEquals("Anderer Satz.", DialogueText.extensionSuffix("Anderer Satz.", "Hallo!"));
+    }
 }

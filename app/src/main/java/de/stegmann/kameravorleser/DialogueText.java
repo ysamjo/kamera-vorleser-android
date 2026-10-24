@@ -1,6 +1,8 @@
 package de.stegmann.kameravorleser;
 
 import java.text.Normalizer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Entfernt ausschließlich das zur Dialogbox gehörende Namensschild. */
 final class DialogueText {
@@ -11,6 +13,18 @@ final class DialogueText {
         String right = TextRules.normalize(current);
         return !left.isEmpty() && (left.equals(right) || TextRules.similarStoryText(left, right)
                 || right.startsWith(left + " ") || left.startsWith(right + " "));
+    }
+
+    static String extensionSuffix(String full, String prefix) {
+        String visible = Normalizer.normalize(full, Normalizer.Form.NFC);
+        String normalizedPrefix = TextRules.normalize(prefix);
+        if (normalizedPrefix.isEmpty()
+                || !TextRules.normalize(visible).startsWith(normalizedPrefix + " ")) return visible;
+        int words = normalizedPrefix.split(" ").length;
+        Matcher matcher = Pattern.compile("[\\p{L}\\p{N}]+").matcher(visible);
+        for (int i = 0; i < words; i++) if (!matcher.find()) return visible;
+        String suffix = visible.substring(matcher.end()).replaceFirst("^[\\s.,!?…:;]+", "").trim();
+        return suffix.isEmpty() ? visible : suffix;
     }
 
     static String withoutSpeaker(String text, String speaker) {
