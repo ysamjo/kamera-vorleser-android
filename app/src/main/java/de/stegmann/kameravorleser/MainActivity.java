@@ -66,13 +66,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity implements TextToSpeech.OnInitListener {
     private static final long ANALYSIS_INTERVAL_MS = 180;
-    private static final long MEMORY_DURATION_MS = 60 * 1000L;
-    private static final int MAX_REMEMBERED_LINES = 180;
+    private static final int MAX_REMEMBERED_LINES = 500;
+    private static final String KEY_DIALOGUE_HISTORY = "dialogueHistoryV2";
     private static final int MAX_QUEUED_UTTERANCES = 2;
     private static final float STORY_TOP_RATIO = 0.74f;
     private static final float STORY_LEFT_RATIO = 0.21f;
@@ -128,7 +129,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     private final AtomicBoolean ocrBusy = new AtomicBoolean(false);
     private final SpeechQueue speechQueue = new SpeechQueue();
-    private final Map<String, Long> spokenLines = new LinkedHashMap<>();
+    private final DialogueHistory dialogueHistory = new DialogueHistory(MAX_REMEMBERED_LINES);
     private final List<Voice> germanVoices = new ArrayList<>();
     private ExecutorService cameraExecutor;
     private TextRecognizer textRecognizer;
@@ -159,6 +160,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     // Dialog & Satzfluss-Tracking (Wachstum, Klick-Erweiterung, Duplikatvermeidung)
     private String lastSpokenVisible = "";
     private String lastSpokenNormalized = "";
+    private String lastSpokenSpeaker = "";
     private long lastSpokenAt = 0L;
 
     // Sound feedback
@@ -242,6 +244,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         // Load sound preference
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        loadDialogueHistory(prefs);
         soundsEnabled = prefs.getBoolean(KEY_SOUNDS_ENABLED, true);
         speechRate = prefs.getFloat("speechRate", 1.15f);
         volume = prefs.getFloat("volume", 0.8f);
@@ -277,12 +280,12 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         repeatButton.setOnClickListener(view -> {
             invalidateAnalysis();
-            spokenLines.clear();
-            lastSpokenVisible = "";
-            lastSpokenNormalized = "";
-            lastSpokenAt = 0L;
             stopSpeech();
-            showStatus("Text kann erneut gelesen werden", true);
+            // Nur die sichtbare Zeile erneut zulassen, die Historie bleibt erhalten.
+            dialogueHistory.forget(currentSpeaker, recognizedText.getText().toString());
+            saveDialogueHistory();
+            resetLastSpoken();
+            showStatus("Aktueller Dialog kann erneut gelesen werden", true);
         });
 
         speedSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -364,9 +367,24 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private void stopSpeech() {
+        // Unterbrochene Zeilen sind nicht vollständig vorgelesen und dürfen erneut starten.
+        boolean changed = false;
+        for (String key : speechQueue.drain()) {
+            changed |= dialogueHistory.forgetKey(key);
+            if (key.equals(DialogueHistory.key(lastSpokenSpeaker, lastSpokenNormalized))) {
+                resetLastSpoken();
+            }
+        }
+        if (changed) saveDialogueHistory();
         // Vor stop() entwerten: Engines dürfen sofort oder später zurückrufen.
-        speechQueue.clear();
         if (textToSpeech != null) textToSpeech.stop();
+    }
+
+    private void resetLastSpoken() {
+        lastSpokenVisible = "";
+        lastSpokenNormalized = "";
+        lastSpokenSpeaker = "";
+        lastSpokenAt = 0L;
     }
 
     private void finishSpeech(String id, boolean failed) {
@@ -374,11 +392,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             String key = speechQueue.finish(id);
             if (key == null || destroyed) return;
             if (failed) {
-                spokenLines.remove(key);
-                if (key.equals(lastSpokenNormalized)) {
-                    lastSpokenVisible = "";
-                    lastSpokenNormalized = "";
-                    lastSpokenAt = 0L;
+                if (dialogueHistory.forgetKey(key)) saveDialogueHistory();
+                if (key.equals(DialogueHistory.key(lastSpokenSpeaker, lastSpokenNormalized))) {
+                    resetLastSpoken();
                 }
             }
             if (foreground && !paused && speechQueue.size() == 0) {
@@ -502,7 +518,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
 
         List<OcrLine> storyLines = new ArrayList<>();
-        forgetOldLines(now);
 
         // OCR-Konfidenz berechnen (Durchschnitt aller TextLines)
         float totalConfidence = 0f;
@@ -558,9 +573,12 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             return;
         }
 
-        List<String> visibleStoryLines = new ArrayList<>();
-        for (OcrLine line : storyLines) visibleStoryLines.add(line.visible);
-        String visibleStory = assembleStoryText(storyLines);
+        String visibleStory = DialogueText.withoutSpeaker(
+                assembleStoryText(storyLines), currentSpeaker);
+        if (visibleStory.isBlank()) {
+            clearPendingStoryIfStale(now);
+            return;
+        }
         String normalizedStory = normalize(visibleStory);
 
         VoiceProfile visibleProfile = voiceProfileFor(normalize(currentSpeaker));
@@ -586,6 +604,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         // Klick-Erweiterung: Wenn der Text nach einem Klick um einen neuen Satzteil gewachsen ist
         boolean isExtension = !lastSpokenNormalized.isEmpty()
+                && normalize(currentSpeaker).equals(lastSpokenSpeaker)
                 && (now - lastSpokenAt < 10000L)
                 && normalizedStory.startsWith(lastSpokenNormalized)
                 && normalizedStory.length() > lastSpokenNormalized.length() + 3;
@@ -611,29 +630,28 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             }
             lastSpokenVisible = visibleStory;
             lastSpokenNormalized = normalizedStory;
+            lastSpokenSpeaker = normalize(currentSpeaker);
             lastSpokenAt = now;
-            spokenLines.put(normalizedStory, now);
+            dialogueHistory.remember(currentSpeaker, normalizedStory);
+            saveDialogueHistory();
             showStatus("Lese vor …", true);
-            trimMemory();
             return;
         }
 
         // Duplikatprüfung: Wurde dieser Dialog bereits gesprochen?
-        if (wasAlreadySpoken(visibleStory, normalizedStory)) {
-            trimMemory();
-            return;
-        }
+        if (dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) return;
 
         // Neuen Dialog vollständig und flüssig sprechen
         if (ttsReady && speechQueue.size() < MAX_QUEUED_UTTERANCES) {
             if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
             lastSpokenVisible = visibleStory;
             lastSpokenNormalized = normalizedStory;
+            lastSpokenSpeaker = normalize(currentSpeaker);
             lastSpokenAt = now;
-            spokenLines.put(normalizedStory, now);
+            dialogueHistory.remember(currentSpeaker, normalizedStory);
+            saveDialogueHistory();
             showStatus("Lese vor …", true);
         }
-        trimMemory();
     }
 
     private boolean speak(String text, String speaker, String dialogueKey) {
@@ -678,7 +696,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         Bundle params = new Bundle();
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume);
 
-        boolean accepted = speechQueue.submit(dialogueKey, id -> textToSpeech.speak(
+        boolean accepted = speechQueue.submit(DialogueHistory.key(speaker, dialogueKey), id -> textToSpeech.speak(
                 withPauses, TextToSpeech.QUEUE_ADD, params, id) == TextToSpeech.SUCCESS);
         if (!accepted) {
             showStatus("Sprachausgabe fehlgeschlagen – versuche erneut", false);
@@ -1163,22 +1181,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
     }
 
-    private boolean wasAlreadySpoken(String candidate) {
-        return wasAlreadySpoken(candidate, normalize(candidate));
-    }
-
-    private boolean wasAlreadySpoken(String candidateVisible, String candidateNormalized) {
-        if (spokenLines.containsKey(candidateNormalized)) return true;
-        for (String previous : spokenLines.keySet()) {
-            if (similarEnough(candidateNormalized, previous)) return true;
-            // Falls der Kandidat nur ein kürzerer Teil eines bereits voll vorgelesenen Dialogs ist
-            if (previous.startsWith(candidateNormalized) && previous.length() > candidateNormalized.length()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private String assembleStoryText(List<OcrLine> lines) {
         List<StoryTextAssembler.Line> input = new ArrayList<>();
         if (lines != null) for (OcrLine line : lines) {
@@ -1216,19 +1218,25 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
 
 
-    private void forgetOldLines(long now) {
-        Iterator<Map.Entry<String, Long>> iterator = spokenLines.entrySet().iterator();
-        while (iterator.hasNext()) {
-            if (now - iterator.next().getValue() > MEMORY_DURATION_MS) iterator.remove();
+    private void loadDialogueHistory(SharedPreferences prefs) {
+        List<String> saved = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(prefs.getString(KEY_DIALOGUE_HISTORY, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                String key = array.optString(i, "");
+                if (!key.isEmpty()) saved.add(key);
+            }
+        } catch (JSONException ignored) {
+            // Beschädigte Einstellungen dürfen die Kamera nicht blockieren.
         }
+        dialogueHistory.restore(saved);
     }
 
-    private void trimMemory() {
-        Iterator<String> iterator = spokenLines.keySet().iterator();
-        while (spokenLines.size() > MAX_REMEMBERED_LINES && iterator.hasNext()) {
-            iterator.next();
-            iterator.remove();
-        }
+    private void saveDialogueHistory() {
+        JSONArray array = new JSONArray();
+        for (String key : dialogueHistory.snapshot()) array.put(key);
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putString(KEY_DIALOGUE_HISTORY, array.toString()).apply();
     }
 
     private void showStatus(String message, boolean good) {
