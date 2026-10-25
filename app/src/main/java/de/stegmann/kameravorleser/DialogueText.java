@@ -12,7 +12,35 @@ final class DialogueText {
         String left = TextRules.normalize(previous);
         String right = TextRules.normalize(current);
         return !left.isEmpty() && (left.equals(right) || TextRules.similarStoryText(left, right)
-                || right.startsWith(left + " ") || left.startsWith(right + " "));
+                || right.startsWith(left + " ") || left.startsWith(right + " ")
+                || containsWords(left, right) || overlapWords(left, right) >= 3);
+    }
+
+    static boolean containsWords(String full, String fragment) {
+        return !fragment.isEmpty() && (" " + full + " ").contains(" " + fragment + " ");
+    }
+
+    /** Nur exakte Wortfolgen: kurze gemeinsame Wörter sind kein Scroll-Beleg. */
+    static int overlapWords(String previous, String current) {
+        if (previous.isEmpty() || current.isEmpty()) return 0;
+        String[] left = previous.split(" ");
+        String[] right = current.split(" ");
+        for (int size = Math.min(left.length, right.length); size > 0; size--) {
+            boolean matches = true;
+            for (int i = 0; i < size; i++) {
+                if (!left[left.length - size + i].equals(right[i])) { matches = false; break; }
+            }
+            if (matches) return size;
+        }
+        return 0;
+    }
+
+    static String afterWords(String visible, int words) {
+        String text = Normalizer.normalize(visible, Normalizer.Form.NFC);
+        if (words == 0) return text;
+        Matcher matcher = Pattern.compile("[\\p{L}\\p{N}]+").matcher(text);
+        for (int i = 0; i < words; i++) if (!matcher.find()) return text;
+        return text.substring(matcher.end()).replaceFirst("^[\\s.,!?…:;]+", "").trim();
     }
 
     static String extensionSuffix(String full, String prefix) {

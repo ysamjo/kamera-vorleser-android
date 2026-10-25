@@ -45,7 +45,38 @@ final class DialogueHistory {
         return !text.isEmpty() && (previous.equals(text)
                 || (!text.startsWith(previous + " ") && text.split(" ").length == previous.split(" ").length
                     && TextRules.similarEnough(text, previous))
-                || previous.startsWith(text + " "));
+                || DialogueText.containsWords(previous, text));
+    }
+
+    /** Schneidet nur bereits vollständig gehörten Text ab; Neu lesen bleibt vollständig. */
+    String unreadText(String speaker, String visible) {
+        String candidate = key(speaker, visible);
+        if (repeatKey != null && matches(repeatKey, candidate)) return visible;
+        String prefix = TextRules.normalize(speaker) + SEPARATOR;
+        String text = TextRules.normalize(visible);
+        int heardWords = 0;
+        for (String entry : entries) {
+            if (!entry.startsWith(prefix)) continue;
+            String previous = entry.substring(prefix.length());
+            if (matches(entry, candidate)) return "";
+            int overlap = DialogueText.overlapWords(previous, text);
+            if (overlap >= 3 || text.startsWith(previous + " ")) {
+                heardWords = Math.max(heardWords, overlap);
+            }
+        }
+        return DialogueText.afterWords(visible, heardWords);
+    }
+
+    boolean awaitsOverlappingSpeech(String speaker, String text) {
+        String prefix = TextRules.normalize(speaker) + SEPARATOR;
+        String normalized = TextRules.normalize(text);
+        for (String entry : pending) {
+            if (!entry.startsWith(prefix)) continue;
+            String previous = entry.substring(prefix.length());
+            if (normalized.startsWith(previous + " ")
+                    || DialogueText.overlapWords(previous, normalized) >= 3) return true;
+        }
+        return false;
     }
 
     void allowRepeat(String speaker, String text) {

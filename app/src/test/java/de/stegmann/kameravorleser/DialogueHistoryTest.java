@@ -4,6 +4,57 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class DialogueHistoryTest {
+    @Test public void scrollingReadsOnlyNewWordsAndKeepsUmlauts() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Pikachu", "Komm mit! Wir gehen zum großen Baum.");
+        assertTrue(history.wasSpoken("Pikachu", "zum großen Baum"));
+        assertTrue(history.wasSpoken("Pikachu", "Wir gehen zum"));
+        assertEquals("Dort blühen Äpfelbäume!", history.unreadText("Pikachu",
+                "zum großen Baum. Dort blu\u0308hen A\u0308pfelbäume!"));
+        assertEquals("zum großen Baum. Komm mit!", history.unreadText("Evoli",
+                "zum großen Baum. Komm mit!"));
+        assertEquals("Baumstamm", history.unreadText("Pikachu", "Baumstamm"));
+    }
+
+    @Test public void scrollingWaitsForCompletionAndDoesNotPersistUnheardText() {
+        DialogueHistory history = new DialogueHistory(500);
+        String key = DialogueHistory.key("Pikachu", "Wir gehen zum großen Baum.");
+        history.begin(key);
+        String scrolling = "zum großen Baum. Dort warten wir.";
+        assertTrue(history.awaitsOverlappingSpeech("Pikachu", scrolling));
+        assertFalse(history.awaitsOverlappingSpeech("Evoli", scrolling));
+        assertEquals(scrolling, history.unreadText("Pikachu", scrolling));
+        history.finish(key, false);
+        assertFalse(history.awaitsOverlappingSpeech("Pikachu", scrolling));
+        assertEquals(scrolling, history.unreadText("Pikachu", scrolling));
+        history.begin(key);
+        history.finish(key, true);
+        assertEquals("Dort warten wir.", history.unreadText("Pikachu", scrolling));
+    }
+
+    @Test public void scrollMemorySurvivesRestartAndRepeatStillReadsFullVisibleText() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Wir gehen zum großen Baum.");
+        DialogueHistory restarted = new DialogueHistory(500);
+        restarted.restore(history.snapshot());
+        assertEquals("", restarted.unreadText("Evoli", "zum großen Baum."));
+        restarted.allowRepeat("Evoli", "zum großen Baum.");
+        assertEquals("zum großen Baum.", restarted.unreadText("Evoli", "zum großen Baum."));
+        String key = DialogueHistory.key("Evoli", "zum großen Baum.");
+        restarted.begin(key);
+        restarted.finish(key, true);
+        assertEquals("", restarted.unreadText("Evoli", "zum großen Baum."));
+    }
+
+    @Test public void shortCommonOverlapAndNegationRemainAudible() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Ich helfe dir.");
+        assertEquals("dir gehört dieser Baum.", history.unreadText("Evoli", "dir gehört dieser Baum."));
+        assertEquals("nicht.", history.unreadText("Evoli", "Ich helfe dir nicht."));
+        history.remember("Evoli", "Hallo!");
+        assertEquals("Wie geht es?", history.unreadText("Evoli", "Hallo!Wie geht es?"));
+    }
+
     @Test public void repeatedOcrAndPunctuationVariationsAreSilent() {
         DialogueHistory history = new DialogueHistory(100);
         history.remember("Pikachu", "Hallo, mein Freund!");

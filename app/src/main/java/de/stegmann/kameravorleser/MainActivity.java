@@ -9,9 +9,6 @@ import android.media.AudioManager;
 import android.media.Image;
 import android.media.ToneGenerator;
 import android.os.Bundle;
-import android.os.Build;
-import android.os.VibrationEffect;
-import android.os.Vibrator;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
@@ -33,6 +30,8 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import android.view.ScaleGestureDetector;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AlertDialog;
+import androidx.camera.core.CameraInfo;
 import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
@@ -66,7 +65,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONArray;
 import org.json.JSONException;
 
-public class MainActivity extends AppCompatActivity implements TextToSpeech.OnInitListener {
+public class MainActivity extends AppCompatActivity {
     private static final long ANALYSIS_INTERVAL_MS = 180;
     private static final int MAX_REMEMBERED_LINES = 500;
     private static final String KEY_DIALOGUE_HISTORY = "dialogueHistoryV2";
@@ -76,7 +75,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final float STORY_RIGHT_RATIO = 0.79f;
     private static final float SPEAKER_TOP_RATIO = 0.70f;
     private static final float SPEAKER_BOTTOM_RATIO = 0.81f;
-    private static final long SPEAKER_HOLD_MS = 2500L;
     private static final int REQUIRED_STABLE_FRAMES = 2;
     private static final long STABLE_WINDOW_MS = 1100L;
     private static final String NARRATOR = "Erzähler";
@@ -103,10 +101,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final float BLUE_REGION_WIDTH_RATIO = 0.18f; // Breite der Sampling-Region
     private static final float BLUE_REGION_HEIGHT_RATIO = 0.10f; // Höhe der Sampling-Region
 
-    // TTS/Voice-Schwellwerte
-    // Extreme Tonhöhen/Tempi verzerren installierte Offline-Stimmen.
-    private static final int VIBRATION_DURATION_MS = 35; // Vibration bei neuem Text: 35ms
-
     private PreviewView previewView;
     private TextView statusText;
     private TextView speakerText;
@@ -130,7 +124,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private final AtomicInteger analysisGeneration = new AtomicInteger();
     private volatile long lastAnalysisAt = 0L;
     private String currentSpeaker = NARRATOR;
-    private long lastSpeakerSeenAt = 0L;
     private String pendingStoryKey = "";
     private int pendingStoryHits = 0;
     private long pendingStorySeenAt = 0L;
@@ -139,15 +132,24 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private float cachedPitch = 1.0f;
     private float cachedRate = 1.0f;
     private float volume = 0.8f;
-    private Vibrator vibrator;
+    private int speechGeneration;
+    private String selectedEngine = "";
+    private String selectedVoice = "";
+    private volatile int speechDialogsOpen;
+    private volatile boolean previewSpeech;
+    private volatile boolean cameraSwitchPending;
+    private boolean cameraSwitchReady;
+    private Runnable pendingCameraChange;
+    private final VoiceSelection voiceSelection = new VoiceSelection();
+    private ProcessCameraProvider cameraProvider;
+    private CameraInfo standardCamera;
+    private CameraInfo wideCamera;
 
     private String previousSpeaker = "";
 
     // Dialog & Satzfluss-Tracking (Wachstum, Klick-Erweiterung, Duplikatvermeidung)
-    private String lastSpokenVisible = "";
     private String lastSpokenNormalized = "";
     private String lastSpokenSpeaker = "";
-    private long lastSpokenAt = 0L;
 
     // Sound feedback
     private boolean soundsEnabled = true;
@@ -213,7 +215,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         confidenceText = findViewById(R.id.confidenceText);
         pauseButton = findViewById(R.id.pauseButton);
         zoomButton = findViewById(R.id.zoomButton);
-        zoomButton.setOnClickListener(view -> toggleZoom());
+        zoomButton.setOnClickListener(view -> showCameraPicker());
+        findViewById(R.id.speechButton).setOnClickListener(view -> showSpeechSettings());
         setupPinchToZoom();
         SeekBar speedSeekBar = findViewById(R.id.speedSeekBar);
         SeekBar volumeSeekBar = findViewById(R.id.volumeSeekBar);
@@ -222,8 +225,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         cameraExecutor = Executors.newSingleThreadExecutor();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
-        textToSpeech = new TextToSpeech(this, this);
-        vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
 
         // Load sound preference
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -237,6 +238,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         volume = Math.max(0f, Math.min(1f, volume));
         speedSeekBar.setProgress(Math.round((speechRate - 0.75f) * 100));
         volumeSeekBar.setProgress(Math.round(volume * 100));
+        selectedEngine = prefs.getString("speechEngine", "");
+        startSpeechEngine(selectedEngine);
 
         // Initialize tone generator for audio feedback
         toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, 50);
@@ -303,10 +306,117 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
     }
 
-    @Override
-    public void onInit(int status) {
-        // Auch ein synchroner Init-Callback muss die Zuweisung des TTS-Objekts abwarten.
-        new android.os.Handler(getMainLooper()).post(() -> initializeSpeech(status));
+    private void startSpeechEngine(String engine) {
+        ttsReady = false;
+        invalidateAnalysis();
+        stopSpeech();
+        if (textToSpeech != null) textToSpeech.shutdown();
+        germanVoices.clear();
+        cachedSpeaker = "";
+        voiceSelection.reset();
+        int generation = ++speechGeneration;
+        selectedEngine = engine;
+        selectedVoice = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString("speechVoice:" + engine, "");
+        showStatus("Sprachengine wird geladen …", true);
+        // Ein synchroner oder veralteter Init darf niemals eine andere Engine konfigurieren.
+        textToSpeech = new TextToSpeech(this, status ->
+                new android.os.Handler(getMainLooper()).post(() -> {
+                    if (!destroyed && generation == speechGeneration) initializeSpeech(status);
+                }), engine.isEmpty() ? null : engine);
+    }
+
+    private void showSpeechSettings() {
+        invalidateAnalysis();
+        stopSpeech();
+        String[] choices = {"Sprachengine auswählen", "Deutsche Offline-Stimme auswählen",
+                "Probehören: Umlaute und Sprecherwechsel"};
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Sprachausgabe")
+                .setItems(choices, (d, which) -> {
+                    if (which == 0) showEnginePicker();
+                    else if (which == 1) showVoicePicker();
+                    else previewVoices();
+                }).setNegativeButton("Schließen", null).create();
+        showSpeechDialog(dialog);
+    }
+
+    private void showSpeechDialog(AlertDialog dialog) {
+        speechDialogsOpen++;
+        dialog.setOnDismissListener(d -> {
+            speechDialogsOpen--;
+            invalidateAnalysis();
+        });
+        dialog.show();
+    }
+
+    private void showEnginePicker() {
+        List<TextToSpeech.EngineInfo> engines = textToSpeech.getEngines();
+        engines.sort(Comparator.comparing(info -> info.label));
+        String[] labels = new String[engines.size() + 1];
+        labels[0] = "Android-Standard";
+        int checked = 0;
+        for (int i = 0; i < engines.size(); i++) {
+            labels[i + 1] = engines.get(i).label;
+            if (engines.get(i).name.equals(selectedEngine)) checked = i + 1;
+        }
+        showSpeechDialog(new AlertDialog.Builder(this).setTitle("Installierte Sprachengines")
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    String engine = which == 0 ? "" : engines.get(which - 1).name;
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                            .putString("speechEngine", engine).apply();
+                    startSpeechEngine(engine);
+                    dialog.dismiss();
+                }).setNegativeButton("Abbrechen", null).create());
+    }
+
+    private void showVoicePicker() {
+        if (!ttsReady || germanVoices.isEmpty()) {
+            showSpeechDialog(new AlertDialog.Builder(this).setTitle("Offline-Stimme fehlt")
+                    .setMessage("Bitte deutsche Sprachdaten in den Android-Einstellungen der gewählten Engine installieren oder eine andere Engine wählen.")
+                    .setPositiveButton("OK", null).create());
+            return;
+        }
+        String[] labels = new String[germanVoices.size() + 1];
+        labels[0] = "Automatisch nach Qualität";
+        int checked = 0;
+        for (int i = 0; i < germanVoices.size(); i++) {
+            labels[i + 1] = germanVoices.get(i).getName();
+            if (germanVoices.get(i).getName().equals(selectedVoice)) checked = i + 1;
+        }
+        showSpeechDialog(new AlertDialog.Builder(this).setTitle("Grundstimme · Figuren wechseln automatisch")
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    stopSpeech();
+                    selectedVoice = which == 0 ? "" : germanVoices.get(which - 1).getName();
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                            .putString("speechVoice:" + selectedEngine, selectedVoice).apply();
+                    cachedSpeaker = "";
+                    voiceSelection.reset();
+                    dialog.dismiss();
+                }).setNegativeButton("Abbrechen", null).create());
+    }
+
+    private void previewVoices() {
+        if (!ttsReady || !foreground) {
+            showStatus("Bitte zuerst eine deutsche Offline-Stimme auswählen", false);
+            return;
+        }
+        stopSpeech();
+        previewSpeech = true;
+        previewVoice("Pikachu", "Schön, dass du zurück bist! Äpfel, Öl und süße Grüße.", true);
+    }
+
+    private void previewVoice(String speaker, String text, boolean first) {
+        applyVoiceForSpeaker(speaker, 1f, 1f);
+        if (!ttsReady) { previewSpeech = false; return; }
+        Bundle params = new Bundle();
+        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume);
+        boolean accepted = speechQueue.submit(first ? "preview:first" : "preview:last", id ->
+                textToSpeech.speak(text, TextToSpeech.QUEUE_ADD, params, id) == TextToSpeech.SUCCESS);
+        if (!accepted) {
+            previewSpeech = false;
+            showStatus("Probehören fehlgeschlagen", false);
+        }
     }
 
     private void initializeSpeech(int status) {
@@ -317,8 +427,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
 
         int languageResult = textToSpeech.setLanguage(Locale.GERMANY);
-        ttsReady = languageResult != TextToSpeech.LANG_MISSING_DATA
-                && languageResult != TextToSpeech.LANG_NOT_SUPPORTED;
+        ttsReady = languageResult >= TextToSpeech.LANG_AVAILABLE;
         if (ttsReady) {
             loadGermanVoices();
             ttsReady = !germanVoices.isEmpty()
@@ -339,9 +448,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         });
 
         if (!ttsReady) showStatus("Deutsche Offline-Stimme fehlt – bitte in Android installieren", false);
+        else showStatus(paused ? "Pausiert" : "Sprachausgabe bereit", true);
     }
 
     private void stopSpeech() {
+        previewSpeech = false;
         // Unterbrochene Zeilen sind nicht vollständig vorgelesen und dürfen erneut starten.
         for (String key : speechQueue.drain()) {
             dialogueHistory.finish(key, false);
@@ -354,16 +465,24 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private void resetLastSpoken() {
-        lastSpokenVisible = "";
         lastSpokenNormalized = "";
         lastSpokenSpeaker = "";
-        lastSpokenAt = 0L;
     }
 
     private void finishSpeech(String id, boolean failed) {
         new android.os.Handler(getMainLooper()).post(() -> {
             String key = speechQueue.finish(id);
             if (key == null || destroyed) return;
+            if (key.startsWith("preview:")) {
+                if (!failed && key.equals("preview:first") && previewSpeech && foreground) {
+                    previewVoice("Bisasam", "Ich höre dich. Die Bäume blühen wunderschön.", false);
+                } else {
+                    previewSpeech = false;
+                    cachedSpeaker = "";
+                    showStatus(failed ? "Probehören fehlgeschlagen" : "Probehören beendet", !failed);
+                }
+                return;
+            }
             if (dialogueHistory.finish(key, !failed)) saveDialogueHistory();
             if (failed) {
                 if (key.equals(DialogueHistory.key(lastSpokenSpeaker, lastSpokenNormalized))) {
@@ -381,32 +500,18 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         future.addListener(() -> {
             try {
                 if (destroyed) return;
-                ProcessCameraProvider provider = future.get();
-
-                Preview preview = new Preview.Builder().build();
-                preview.setSurfaceProvider(previewView.getSurfaceProvider());
-
-                ImageAnalysis analysis = new ImageAnalysis.Builder()
-                        .setTargetResolution(new Size(1280, 720))
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build();
-                analysis.setAnalyzer(cameraExecutor, this::analyzeFrame);
-
-                provider.unbindAll();
-                camera = provider.bindToLifecycle(
-                        this,
-                        CameraSelector.DEFAULT_BACK_CAMERA,
-                        preview,
-                        analysis
-                );
-                if (camera != null) {
-                    camera.getCameraInfo().getZoomState().observe(this, zoomState -> {
-                        if (zoomState != null && zoomButton != null) {
-                            float ratio = zoomState.getZoomRatio();
-                            zoomButton.setText(String.format(Locale.US, "%.1fx", ratio));
-                        }
-                    });
+                cameraProvider = future.get();
+                List<CameraInfo> backCameras = CameraSelector.DEFAULT_BACK_CAMERA
+                        .filter(cameraProvider.getAvailableCameraInfos());
+                standardCamera = backCameras.get(0);
+                wideCamera = null;
+                for (CameraInfo info : backCameras) {
+                    if (info.getIntrinsicZoomRatio() < .95f && (wideCamera == null
+                            || info.getIntrinsicZoomRatio() < wideCamera.getIntrinsicZoomRatio())) {
+                        wideCamera = info;
+                    }
                 }
+                bindCamera(standardCamera, 1f);
                 showStatus("Suche Text …", true);
             } catch (Exception error) {
                 showStatus("Kamera konnte nicht gestartet werden", false);
@@ -422,7 +527,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private boolean acceptsFrame(int generation) {
-        return !destroyed && foreground && !paused && generation == analysisGeneration.get();
+        return !destroyed && foreground && !paused && speechDialogsOpen == 0 && !previewSpeech && !cameraSwitchPending
+                && generation == analysisGeneration.get();
     }
 
     @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalGetImage.class)
@@ -441,6 +547,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             finally {
                 ocrBusy.set(false);
                 if (destroyed) textRecognizer.close();
+                else new android.os.Handler(getMainLooper()).post(this::completeCameraChangeWhenIdle);
             }
         });
         try {
@@ -532,10 +639,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (detectedSpeaker != null) {
             if (!normalize(currentSpeaker).equals(normalize(detectedSpeaker))) invalidateAnalysis();
             currentSpeaker = detectedSpeaker;
-            lastSpeakerSeenAt = now;
-        } else if (now - lastSpeakerSeenAt > SPEAKER_HOLD_MS) {
-            if (!currentSpeaker.equals(NARRATOR)) invalidateAnalysis();
-            currentSpeaker = NARRATOR;
         }
 
         String speakerKey = normalize(currentSpeaker);
@@ -586,48 +689,17 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (speechQueue.size() > 0 && !normalize(currentSpeaker).equals(cachedSpeaker)) stopSpeech();
         if (dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) return;
 
-        // Klick-Erweiterung: Wenn der Text nach einem Klick um einen neuen Satzteil gewachsen ist
-        boolean isExtension = !lastSpokenNormalized.isEmpty()
-                && normalize(currentSpeaker).equals(lastSpokenSpeaker)
-                && (now - lastSpokenAt < 10000L)
-                && normalizedStory.startsWith(lastSpokenNormalized)
-                && normalizedStory.length() > lastSpokenNormalized.length() + 3;
-
-        if (isExtension) {
-            boolean ttsSpeaking = speechQueue.size() > 0;
-            if (ttsSpeaking) {
-                // Vorheriges unvollständiges Vorlesen abbrechen und vollen, runden Gesamtsatz sprechen
-                stopSpeech();
-                if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
-            } else {
-                String trimmedLast = lastSpokenVisible != null ? lastSpokenVisible.trim() : "";
-                char lastChar = !trimmedLast.isEmpty() ? trimmedLast.charAt(trimmedLast.length() - 1) : ' ';
-                if (lastChar == '.' || lastChar == '!' || lastChar == '?' || lastChar == '…' || lastChar == ':') {
-                    String suffix = DialogueText.extensionSuffix(visibleStory, lastSpokenVisible);
-                    if (!suffix.isBlank()) {
-                        if (!speak(suffix, currentSpeaker, normalizedStory)) return;
-                    }
-                } else {
-                    // Satz war unvollständig getrennt -> vollen Satz flüssig sprechen
-                    if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
-                }
-            }
-            lastSpokenVisible = visibleStory;
-            lastSpokenNormalized = normalizedStory;
-            lastSpokenSpeaker = normalize(currentSpeaker);
-            lastSpokenAt = now;
-            showStatus("Lese vor …", true);
-            return;
-        }
+        // Scroll-Erweiterungen warten auf onDone: erst dann ist der alte Teil wirklich gehört.
+        if (dialogueHistory.awaitsOverlappingSpeech(currentSpeaker, normalizedStory)) return;
+        String unread = dialogueHistory.unreadText(currentSpeaker, visibleStory);
+        if (unread.isBlank()) return;
 
         // Neuen Dialog vollständig und flüssig sprechen
         if (ttsReady && (speechQueue.size() < MAX_QUEUED_UTTERANCES
                 || !normalize(currentSpeaker).equals(cachedSpeaker))) {
-            if (!speak(visibleStory, currentSpeaker, normalizedStory)) return;
-            lastSpokenVisible = visibleStory;
+            if (!speak(unread, currentSpeaker, normalizedStory)) return;
             lastSpokenNormalized = normalizedStory;
             lastSpokenSpeaker = normalize(currentSpeaker);
-            lastSpokenAt = now;
             showStatus("Lese vor …", true);
         }
     }
@@ -667,15 +739,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         // Audio-Feedback bei neuem Text
         playNewTextSound();
-
-        // Vibrations-Feedback bei neuem Text
-        if (vibrator != null && vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(VIBRATION_DURATION_MS, VibrationEffect.DEFAULT_AMPLITUDE));
-            } else {
-                vibrator.vibrate(VIBRATION_DURATION_MS);
-            }
-        }
 
         // Lautstärke über Bundle setzen
         Bundle params = new Bundle();
@@ -968,7 +1031,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         if (needsUpdate) {
             if (!germanVoices.isEmpty()) {
-                int voiceIndex = Math.floorMod(profile.voiceSlot, germanVoices.size());
+                int preferred = profile.voiceSlot;
+                for (int i = 0; i < germanVoices.size(); i++) {
+                    if (germanVoices.get(i).getName().equals(selectedVoice)) { preferred = i; break; }
+                }
+                int voiceIndex = voiceSelection.select(key, preferred, germanVoices.size());
                 if (textToSpeech.setVoice(germanVoices.get(voiceIndex)) != TextToSpeech.SUCCESS) {
                     ttsReady = false;
                     showStatus("Offline-Stimme konnte nicht geladen werden", false);
@@ -1239,19 +1306,92 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 
-    private void toggleZoom() {
+    private void bindCamera(CameraInfo info, float ratio) {
+        invalidateAnalysis();
+        if (camera != null) camera.getCameraInfo().getZoomState().removeObservers(this);
+        cameraProvider.unbindAll();
+        camera = null;
+        Preview preview = new Preview.Builder().build();
+        preview.setSurfaceProvider(previewView.getSurfaceProvider());
+        ImageAnalysis analysis = new ImageAnalysis.Builder()
+                .setTargetResolution(new Size(1280, 720))
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build();
+        analysis.setAnalyzer(cameraExecutor, this::analyzeFrame);
+        camera = cameraProvider.bindToLifecycle(this, info.getCameraSelector(), preview, analysis);
+        Camera bound = camera;
+        camera.getCameraInfo().getZoomState().observe(this, state -> {
+            if (state != null && camera == bound) {
+                zoomButton.setText(String.format(Locale.GERMAN, "%.1f×",
+                        state.getZoomRatio() * info.getIntrinsicZoomRatio()));
+            }
+        });
+        setCameraZoom(ratio);
+    }
+
+    private void setCameraZoom(float ratio) {
         if (camera == null) return;
-        ZoomState zoomState = camera.getCameraInfo().getZoomState().getValue();
-        if (zoomState == null) return;
-        float currentRatio = zoomState.getZoomRatio();
-        float maxZoom = zoomState.getMaxZoomRatio();
-        float targetRatio;
-        if (currentRatio < 1.8f) {
-            targetRatio = Math.min(2.0f, maxZoom);
-        } else {
-            targetRatio = 1.0f;
-        }
-        camera.getCameraControl().setZoomRatio(targetRatio);
+        Camera bound = camera;
+        ListenableFuture<Void> zoom = bound.getCameraControl().setZoomRatio(ratio);
+        zoom.addListener(() -> {
+            try { zoom.get(); }
+            catch (Exception error) {
+                if (!destroyed && camera == bound) showStatus("Zoom konnte nicht eingestellt werden", false);
+            }
+        }, ContextCompat.getMainExecutor(this));
+    }
+
+    private void showCameraPicker() {
+        if (camera == null || standardCamera == null || cameraSwitchPending) return;
+        ZoomState state = standardCamera.getZoomState().getValue();
+        if (state == null) return;
+        List<Float> ratios = CameraZoom.presets(state.getMinZoomRatio(), state.getMaxZoomRatio());
+        boolean separateWide = state.getMinZoomRatio() >= 1f && wideCamera != null;
+        List<String> labels = new ArrayList<>();
+        if (separateWide) labels.add(String.format(Locale.GERMAN, "%.1f× · Weitwinkel",
+                wideCamera.getIntrinsicZoomRatio()));
+        for (float ratio : ratios) labels.add(String.format(Locale.GERMAN, "%.1f×%s", ratio,
+                ratio < 1f ? " · Weitwinkel" : ""));
+        String title = !separateWide && state.getMinZoomRatio() >= 1f
+                ? "Kamera · kein Weitwinkel freigegeben" : "Kamera und Zoom";
+        new AlertDialog.Builder(this).setTitle(title)
+                .setItems(labels.toArray(new String[0]), (dialog, which) -> {
+                    CameraInfo target = separateWide && which == 0 ? wideCamera : standardCamera;
+                    float ratio = separateWide && which == 0 ? 1f : ratios.get(which - (separateWide ? 1 : 0));
+                    requestCameraChange(target, ratio);
+                }).setNegativeButton("Schließen", null).show();
+    }
+
+    private void requestCameraChange(CameraInfo target, float ratio) {
+        cameraSwitchPending = true;
+        cameraSwitchReady = false;
+        invalidateAnalysis();
+        pendingCameraChange = () -> {
+            CameraInfo previous = camera.getCameraInfo();
+            ZoomState previousZoom = previous.getZoomState().getValue();
+            float previousRatio = previousZoom == null ? 1f : previousZoom.getZoomRatio();
+            try {
+                if (previous.equals(target)) setCameraZoom(ratio);
+                else bindCamera(target, ratio);
+            } catch (RuntimeException error) {
+                try { bindCamera(previous, previousRatio); }
+                catch (RuntimeException ignored) { camera = null; }
+                showStatus("Kamerawechsel fehlgeschlagen", false);
+            }
+        };
+        // Erst nach allen bereits angenommenen Analyzer-Aufrufen und dem ML-Kit-Abschluss
+        // entbinden. ImageProxy und Bilddaten bleiben bis FrameRelease gültig.
+        cameraExecutor.execute(() -> new android.os.Handler(getMainLooper()).post(() -> {
+            cameraSwitchReady = true;
+            completeCameraChangeWhenIdle();
+        }));
+    }
+
+    private void completeCameraChangeWhenIdle() {
+        if (destroyed || !cameraSwitchReady || ocrBusy.get() || pendingCameraChange == null) return;
+        Runnable change = pendingCameraChange;
+        pendingCameraChange = null;
+        try { change.run(); }
+        finally { cameraSwitchPending = false; cameraSwitchReady = false; }
     }
 
     private void setupPinchToZoom() {
@@ -1259,14 +1399,14 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 new ScaleGestureDetector.SimpleOnScaleGestureListener() {
                     @Override
                     public boolean onScale(ScaleGestureDetector detector) {
-                        if (camera == null) return true;
+                        if (camera == null || cameraSwitchPending) return true;
                         ZoomState zoomState = camera.getCameraInfo().getZoomState().getValue();
                         if (zoomState == null) return true;
                         float currentRatio = zoomState.getZoomRatio();
                         float delta = detector.getScaleFactor();
                         float newRatio = Math.max(zoomState.getMinZoomRatio(),
                                 Math.min(zoomState.getMaxZoomRatio(), currentRatio * delta));
-                        camera.getCameraControl().setZoomRatio(newRatio);
+                        setCameraZoom(newRatio);
                         return true;
                     }
                 });

@@ -4,6 +4,13 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class DialogueTextTest {
+    @Test public void scrollingKeepsSpeakerOnlyWithSharedWords() {
+        assertTrue(DialogueText.sameDialogue("Wir gehen zum großen Baum.", "zum großen Baum. Komm mit!"));
+        assertTrue(DialogueText.sameDialogue("Wir gehen zum großen Baum.", "zum großen Baum."));
+        assertFalse(DialogueText.sameDialogue("Ich helfe dir.", "dir gehört der Baum."));
+        assertFalse(DialogueText.sameDialogue("Wir gehen zum großen Baum.", "Schön, dass du da bist!"));
+    }
+
     @Test public void removesVisibleNameLabelWithoutSpeakingIt() {
         assertEquals("Hallo, wie geht es dir?", DialogueText.withoutSpeaker("Pikachu: Hallo, wie geht es dir?", "Pikachu"));
         assertEquals("Guten Morgen!", DialogueText.withoutSpeaker("Bisasam – Guten Morgen!", "Bisasam"));
