@@ -9,6 +9,7 @@
 
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
+        android:contentDescription="Kamerabild: Tippen setzt den Fokus, langes Drücken aktiviert Autofokus"
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:implementationMode="performance"
@@ -351,7 +352,7 @@
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:contentDescription="Sounds"
+                android:contentDescription="Figurenstimme"
                 android:src="@drawable/ic_volume" />
 
             <TextView
@@ -360,7 +361,7 @@
                 android:layout_marginStart="7dp"
                 android:layout_weight="1"
                 android:fontFamily="sans-serif-rounded"
-                android:text="SOUNDS"
+                android:text="FIGURENSTIMME"
                 android:textColor="@color/cream"
                 android:textSize="11sp"
                 android:textStyle="bold" />
@@ -374,7 +375,7 @@
             android:fontFamily="sans-serif-rounded"
             android:insetTop="0dp"
             android:insetBottom="0dp"
-            android:text="EIN"
+            android:text="STIMME WÄHLEN"
             android:textColor="@color/navy_ink"
             android:textSize="11sp"
             android:textStyle="bold"

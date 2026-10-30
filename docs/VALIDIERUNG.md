@@ -357,3 +357,62 @@ dass die AGP-Sammelbefehle `lint` und `test` nur Debug geprüft haben.
 Die CI fordert deshalb nun beide Varianten ausdrücklich an;
 `android.onlyEnableUnitTestForTheTestedBuildType=false` aktiviert auch die
 Release-Unit-Tests. Ergebnisse des abschließenden Laufs stehen in PR #1.
+
+
+## Nutzerbefunde: Namensschild, Stimmen, Fokus und Scrollen (24.10.2026)
+
+Ausgangsstand: PR #1 / `318518e`. Die zuvor installierte APK konnte in dieser
+Sitzung nicht festgestellt werden; die dort beobachteten Fehler werden nicht
+als Gerätetest des veröffentlichten PR-Stands gewertet.
+
+- Erkennungston und Sprecherwechselton einschließlich ToneGenerator entfernt.
+  Vibration und VIBRATE-Berechtigung ebenfalls entfernt, unabhängig von alten
+  Sound-Einstellungen. Die bisherige Sound-Schaltfläche öffnet die Stimmenauswahl.
+- Geometrische Namensschildsuche akzeptiert das Schild nun auch dann, wenn es
+  selbst in der Story-ROI liegt. „Professor“ und „Tangoloss“ können aus getrennten
+  OCR-Zeilen zusammengesetzt werden; beide Schreibweisen nutzen dieselbe Identität.
+  Ein bekannter zusammengeführter Professor-Präfix wird ebenfalls entfernt.
+  Satz-/Aktionszeilen werden nicht als Namensschild bevorzugt. Synthetische
+  Geometrien ersetzen keine realen Pokopia-Kamera-Fixtures.
+- Pro Sprecher wird ein echter installierter deutscher Offline-Voice-Name lokal
+  gespeichert. Freie Stimmen werden zunächst separat vergeben, anschließend wird
+  die bisher am wenigsten verwendete Stimme genutzt. Manuelle Auswahl pro Figur,
+  Umlaut-Hörprobe und Link zu Android-TTS-Einstellungen ergänzt. Stimmennamen statt
+  Listenindizes erhalten die Zuordnung auch bei geänderter Stimmenreihenfolge.
+  Entfernte Stimmen werden durch eine verfügbare ersetzt. Numerische Figurenprofile
+  bleiben moderat; satzzeichenabhängige Tonhöhen-/Temposprünge entfallen.
+- NFC-Erhalt von ä/ö/ü/ß bleibt getestet. Die App verändert keine Umlaute in ae/oe/ue.
+  Die tatsächliche deutsche Aussprache und Natürlichkeit der installierten Engine
+  sind ohne Hörtest ausdrücklich nicht bestätigt. Es werden keine neuen Sprachmodelle
+  oder Cloud-Stimmen mitgeliefert.
+- Tippen auf die Vorschau setzt CameraX-Autofokus und Belichtungsmesspunkt; ein
+  farbiger Rahmen meldet Erfolg/Fehler. Fokus bleibt bis zur nächsten Aktion bzw.
+  Kamera-Unterbrechung erhalten; langes Drücken aktiviert wieder Autofokus.
+  Mehrfingergesten lösen keinen Fokus-Tap aus. Hardwareprüfung auf Pixel bleibt offen.
+- Scrollfenster werden mit bereits gehörten und seriell eingereihten Fenstern
+  desselben Sprechers verglichen. Exakte Wortüberlappung ab drei Wörtern sowie
+  Präfix-Erweiterungen geben nur den neuen Rest aus; vollständig gehörte Ausschnitte
+  bleiben still. Sprecherzuordnung läuft bei gleichem/überlappendem Dialog ohne
+  zeitgesteuerten Wechsel zur Erzählerstimme weiter. „Neu lesen“ gibt das sichtbare
+  Fenster einmal vollständig frei. Nur onDone speichert; Fehler/Stop verwerfen auch
+  abhängige Scroll-Suffixe, verspätete Callbacks bleiben wirkungslos.
+
+Prüfung: 51 JUnit-Testmethoden direkt mit JDK 21/JUnit 4.13.2 erfolgreich,
+alle Android-Java-Quellen mit SDK 36, vorhandenen Abhängigkeiten und bestehendem
+R.jar kompiliert. AAPT2 hat die Ressourcen kompiliert; das ist kein vollständiger
+Ressourcen-Link und kein APK-Build. `git diff --check` bestanden.
+Vollständiger Gradle-Aufruf versucht; fehlende Distribution 9.5 und gesperrte
+DNS-Auflösung (`services.gradle.org`) blockieren lokale Builds. CI-Ergebnis des
+neuen Commits separat prüfen; ältere grüne Läufe belegen diese Änderungen nicht.
+
+ADB erneut versucht: Listener weiterhin `Operation not permitted`. Kein Modell,
+keine Seriennummer und keine installierte Version bestätigt. Keine Installation,
+Deinstallation, Datenlöschung oder echte Kamera-/Hör-/Fokus-/Neustartprüfung.
+
+Grenzen: Endlich viele Grundstimmen garantieren keine eigene natürliche Stimme
+für jede Figur; unterschiedliche Pitch-/Rate-Werte garantieren keine hörbare
+Einzigartigkeit. Ohne mindestens drei überlappende Wörter oder bei OCR-Fehlern in
+diesem Übergang kann ein Scrollfenster vollständig erneut gelesen werden.
+Sehr schnelles Scrollen bei voller Zwei-Ausgaben-Queue oder vor stabiler OCR
+kann Text verlieren. Fehlende/falsch erkannte Namensschilder bleiben mehrdeutig.
+API-23/26/30-Gerätematrix, Flugmodus und akustische Abnahme bleiben offen.
