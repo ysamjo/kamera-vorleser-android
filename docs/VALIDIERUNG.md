@@ -1,5 +1,106 @@
 # Umsetzung und Validierung
 
+## 30.10.2026 · Umstellung auf sherpa-onnx / Piper Thorsten high
+
+Aktueller Stand nach der ausdrücklichen Wahl dieser Engine:
+
+- Einmalige Migration der Engine-Präferenz auf
+  `com.k2fsa.sherpa.onnx.tts.engine`, auch für bestehende Installationen.
+  Figureneffekte werden bei der Umstellung deaktiviert; ein späterer manueller
+  Enginewechsel bleibt erhalten. Vorhandenes Nutzertempo bleibt unverändert.
+- Fehlende gewählte Pakete werden vor dem TTS-Konstruktor erkannt, damit der
+  Konstruktor in diesem Fall nicht automatisch die Systemengine verwendet.
+  Keine Sprache und ein Installationshinweis statt falscher Bereitschaft.
+  Das ist kein Nachweis gegen jeden internen Android-Fallback bei einem zwar
+  installierten, aber defekten Dienst. Bei installiertem Paket bleibt der
+  Android-TTS-Konstruktor mit expliziter Engine-Auswahl zuständig.
+- STIMME enthält „Thorsten einrichten / aktivieren“ und die offizielle
+  Downloadübersicht im externen Browser. Keine Bild-/Textübertragung durch die
+  App. Die Engine-Auswahl wird unabhängig von einem laufenden TTS-Objekt über
+  Androids Dienstauflösung gefüllt und funktioniert auch ohne installierte Engine.
+- Rückkehr nach Installation versucht eine zuvor fehlende Engine erneut.
+  Fehler-/Bereitschaftsanzeigen werden nicht mehr durch normale OCR-Ergebnisse
+  ohne betriebsbereite TTS überschrieben.
+
+### Tatsächlich erzeugte und geprüfte APKs
+
+- App: Version 1.3 / Code 4, `app/build/outputs/apk/debug/app-debug.apk`.
+  **Gradle 9.5.0/JDK 21: assembleDebug und testDebugUnitTest erfolgreich.**
+  Alle 46 JUnit-Testmethoden bestanden. Der frühere Speicherplatzengpass war
+  behoben; der bestehende Cache wurde als APFS-Kopie in einen beschreibbaren
+  temporären Gradle-Cache übernommen.
+- Engine: über die offizielle Downloadübersicht ermittelte ARM64-APK,
+  sherpa-onnx 1.13.8 (Code 20260910), Paket
+  `com.k2fsa.sherpa.onnx.tts.engine`. Signatur mit `apksigner verify` erfolgreich,
+  Zertifikat SHA-256 `030a90bdd6e4c5eef1e161acfa6455a912c45cb2423b64df449ca88fdee097bb`.
+  Signaturprüfung belegt Integrität, keine unabhängige Bewertung des Codes.
+  AAPT-Metadaten und Modellassets geprüft: `de_DE-thorsten-high.onnx`,
+  Modellkonfiguration Sprache de_DE, eSpeak-Stimme de, **ein Sprecher**.
+  Dateiprüfsumme SHA-256:
+  `9b2ffc5d40fdfcf2b78f146976b44a09726ba2d971a1cec32bcf77892d6e1bbb`.
+  Lokale Datei: `app/build/outputs/tts-engine/thorsten-high-arm64.apk`.
+- Das zusammengeführte App-Manifest und die Engine-APK haben keine
+  INTERNET-Berechtigung. Die App benötigt weiterhin die Kamera-Berechtigung.
+- Lint zunächst offline an fehlenden Android-Test-Abhängigkeiten gescheitert.
+  Erneuter Aufruf für lintDebug/assembleDebugAndroidTest mit Netzwerk scheitert
+  beim Google-Maven-Zugriff (`dl.google.com: nodename nor servname provided, or not known`).
+  Deshalb **kein erfolgreicher aktueller Lint-/Instrumentation-APK-Build**.
+  Neuer Instrumentation-Fall für einmalige Migration, fehlende Engine und
+  weiterhin nutzbare Einstellungen ergänzt, aber nicht gebaut/ausgeführt.
+- `git diff --check` erfolgreich. `adb devices -l` und `adb mdns services`
+  zeigen keine Geräte. **Keine Installation und kein Gerätetest durchgeführt.**
+  Subjektiver Klang, Umlaute, Latenz und Flugmodus bleiben am Gerät zu bestätigen.
+
+Der Engine-Paketname ist für verschiedene sherpa-Modell-APKs gleich. Die App
+kann allein anhand dieses Namens nicht nachweisen, dass eine fremde bestehende
+Installation ebenfalls Thorsten enthält. Die bereitgestellte und geprüfte APK
+enthält das gewünschte Modell. Nur ein Sprecher bedeutet auch, dass natürliche
+unterschiedliche Figurenstimmen mit dieser einzelnen APK nicht verfügbar sind.
+
+Quelle der heruntergeladenen Engine:
+https://huggingface.co/csukuangfj2/sherpa-onnx-apk/resolve/main/tts-engine-new/1.13.8/sherpa-onnx-1.13.8-arm64-v8a-deu-tts-engine-vits-piper-de_DE-thorsten-high.apk
+
+
+## 30.10.2026 · Originalklang statt automatischer Stimmverzerrung (Version 1.3)
+
+Auf Rückmeldung zur weiterhin schlechten Stimme wurde der aktive Ausgabepfad
+geprüft. Die Version davor variierte Tonhöhe/Tempo pro Figur und Satzzeichen
+und konnte bei Sprecherwechseln auf schlechter bewertete Grundstimmen wechseln.
+Das sind mögliche Klangursachen; ohne angeschlossenes Gerät ist die tatsächlich
+installierte Version oder Engine nicht feststellbar.
+
+- Standard: Originaltonhöhe 1,0 und ausschließlich das vom Nutzer gewählte Tempo.
+  Neue Einstellungen starten bei 1,0×; gespeicherte Tempi werden erhalten.
+  Das Stimmenmenü bietet einen expliziten Rücksetzer auf 1,0×.
+- Bestehende Figurenprofile sind über eine lokal gespeicherte Option einschaltbar;
+  diese ist auch für vorhandene Installationen standardmäßig aus. Automatische
+  Satzzeichen-Pitch-/Temposprünge entfallen in beiden Modi. Anzeige und Hörprobe
+  verwenden denselben Modus wie echte Dialoge.
+- Die Automatik beginnt mit der bestbewerteten Offline-Stimme. Beim Wechsel
+  werden nur Stimmen mindestens derselben gemeldeten Qualität zugelassen.
+  Eine manuelle Grundstimme definiert entsprechend die Mindestqualität.
+  Bei nur einer geeigneten Stimme bleibt die Grundstimme gleich. Weiterhin
+  ausschließlich installierte deutsche Offline-Stimmen, bevorzugt de-DE.
+- Versionsnummer auf 1.3 / Code 4 erhöht, um den nächsten Build identifizieren
+  zu können. Noch keine Aussage über eine Installation dieser Version.
+
+Prüfung: 46 lokale JUnit-Testmethoden mit JDK 21/JUnit 4.13.2 direkt ausgeführt,
+alle bestanden. Neue Regressionen prüfen unverzerrte Ausgabe über alle
+Figurenprofile und Reglerwerte sowie das Vermeiden schlechterer Grundstimmen.
+Der reguläre Wrapper konnte den vorhandenen Cache nicht beschreiben. Direkter
+Gradle-9.5.0-Start mit beschreibbarem Cache gelang, scheiterte aber vor der
+Projektkonfiguration an `No space left on device` beim Erzeugen der Gradle-API-JAR.
+Die Systemplatte hatte nur etwa 170 MB frei. Keine fremden Dateien gelöscht.
+Build/Lint und APK-Erstellung deshalb nicht abgeschlossen.
+
+ADB ist erreichbar; `adb devices -l` zeigte eine leere Geräteliste. Keine APK
+installiert, kein Hörtest oder Flugmodus-/Kamera-Gerätetest durchgeführt.
+Natürlichkeit und Umlautaussprache der tatsächlich verwendeten Engine bleiben
+unbestätigt. Unterschiedliche Stimmen nach Engine-Qualitätswert sind kein Beleg
+für hörbar bessere Stimmen.
+
+Die folgenden Abschnitte sind historische Prüfprotokolle früherer Versionen.
+
 Stand: 08.10.2026. Basis: `3ad0ea9`.
 
 ## Stabilität (KAV-01 bis KAV-04)

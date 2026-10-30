@@ -74,3 +74,44 @@ verwendet; sonst bleiben andere installierte deutsche Offline-Stimmen zulässig.
 Die hörbare Unterscheidbarkeit aller Figuren hängt von der Engine ab und ist
 nicht durch unterschiedliche Zahlenprofile garantiert. Bei einem neuen Dialog
 ohne erkanntes Namensschild fällt die App auf den Erzähler zurück.
+
+## Sprachklang ab Version 1.3
+
+Die Standardausgabe verwendet die Originaltonhöhe der Offline-Engine und nur
+noch das am Regler gewählte Tempo. Das Standardtempo bei neuen Einstellungen
+ist 1,0×. Gespeicherte Tempi bleiben erhalten; **STIMME → Normales Sprechtempo**
+setzt sie auf 1,0× zurück. **STIMME → Figureneffekte** aktiviert bei Bedarf die
+bisherigen Pokémon-Pitch-/Tempovarianten; standardmäßig sind sie ausgeschaltet.
+Automatische Tonhöhensprünge durch Ausrufe- oder Fragezeichen entfallen.
+
+Die automatische Grundstimmenauswahl wechselt nur zwischen Stimmen mit der
+höchsten von der Engine gemeldeten Qualität. Bei manueller Auswahl gilt deren
+Qualität als Untergrenze für den Wechsel. Gibt es nur eine passende Stimme,
+bleibt diese erhalten. Qualitätswerte sind Engine-Angaben und ersetzen keinen
+Hörvergleich. Die Hörprobe verwendet dieselben Einstellungen wie die Dialoge.
+
+## Thorsten als Standardengine (Version 1.3)
+
+Die App wird beim ersten Start dieser Version auch auf bestehenden Installationen
+auf `com.k2fsa.sherpa.onnx.tts.engine` umgestellt; Figureneffekte werden ausgeschaltet.
+Eine danach bewusst gewählte andere Engine bleibt gespeichert. Das zuletzt
+gewählte Sprechtempo bleibt erhalten und kann unter STIMME auf 1,0× gesetzt werden.
+
+Zusätzlich zur Vorleser-App muss die **sherpa-onnx-Engine-APK mit dem Modell
+vits-piper-de_DE-thorsten-high** installiert sein. Das Modellarchiv allein genügt
+nicht. **STIMME → Thorsten einrichten / aktivieren** bietet den offiziellen
+Download und aktiviert die Engine. Kehrt man nach ihrer Installation zur App
+zurück, wird eine zuvor fehlende ausgewählte Engine erneut gestartet.
+
+Ohne installiertes Engine-Paket bleibt die Sprachausgabe aus und zeigt einen
+Installationshinweis. Die Engine-Auswahl funktioniert auch in diesem Zustand.
+Die Sprachberechnung erfolgt lokal. Das bereitgestellte Thorsten-high-Modell
+hat eine Sprecherstimme; es erzeugt keine unterschiedlichen Pokémon-Stimmen.
+Andere sherpa-Modelle benutzen denselben Paketnamen: Bei einer bereits
+installierten sherpa-Engine daher tatsächlich die Thorsten-high-APK verwenden.
+
+Bereitgestellte Dateien (Build-Ausgaben, außerhalb von Git):
+- Vorleser: `app/build/outputs/apk/debug/app-debug.apk`
+- Deutsche Engine für ARM64: `app/build/outputs/tts-engine/thorsten-high-arm64.apk`
+
+Offizielle Downloadübersicht: https://k2-fsa.github.io/sherpa/onnx/tts/apk-engine.html

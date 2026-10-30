@@ -6,6 +6,19 @@ import java.util.Set;
 import static org.junit.Assert.*;
 
 public class SpeakerVoiceTest {
+    @Test public void originalVoiceAvoidsArtificialPitchAndSpeedForEveryProfile() {
+        for (String name : new String[]{"pikachu", "onix", "rotom", "erzähler"}) {
+            for (float base : new float[]{.65f, 1f, 1.30f}) {
+                assertEquals(1f, SpeakerVoice.pitch(name, base, false), 0f);
+                for (float slider : new float[]{.75f, 1f, 1.15f, 1.75f}) {
+                    assertEquals(slider, SpeakerVoice.rate(name, base, slider, false), 0f);
+                }
+            }
+        }
+        assertNotEquals(1f, SpeakerVoice.pitch("pikachu", 1.30f, true), 0f);
+        assertNotEquals(1f, SpeakerVoice.rate("onix", .86f, 1f, true), 0f);
+    }
+
     @Test public void identitiesAreStableAcrossOrderAndJavaHashCollisions() {
         String[] speakers = {"pikachu", "pichu", "evoli", "togepi", "onix", "stahlos", "Aa", "BB"};
         Set<String> identities = new HashSet<>();

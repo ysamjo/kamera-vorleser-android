@@ -3,6 +3,8 @@ package de.stegmann.kameravorleser;
 import android.Manifest;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.Intent;
+import android.speech.tts.TextToSpeech;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -29,6 +31,46 @@ public class LifecycleSmokeTest {
         PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         KeyguardManager keyguard = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
         Assume.assumeTrue("Gerät muss wach und entsperrt sein", power.isInteractive() && !keyguard.isKeyguardLocked());
+    }
+
+    @Test public void thorstenMigrationAndMissingEngineRemainUsableWithoutFallback() {
+        Context context = ApplicationProvider.getApplicationContext();
+        String engine = "com.k2fsa.sherpa.onnx.tts.engine";
+        Assume.assumeTrue("Prüft gezielt ein Gerät ohne installierte sherpa-Engine",
+                context.getPackageManager().queryIntentServices(
+                        new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE).setPackage(engine), 0).isEmpty());
+        SharedPreferences prefs = context.getSharedPreferences("KameraVorleserPrefs", Context.MODE_PRIVATE);
+        String[] keys = {"speechEngine", "characterEffects", "thorstenEngineConfiguredV1", "speechVoice:" + engine};
+        java.util.Map<String, ?> before = prefs.getAll();
+        prefs.edit().remove("thorstenEngineConfiguredV1").putString("speechEngine", "")
+                .putBoolean("characterEffects", true).commit();
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                assertEquals(engine, prefs.getString("speechEngine", ""));
+                assertFalse(prefs.getBoolean("characterEffects", true));
+                assertTrue(((TextView) activity.findViewById(R.id.statusText)).getText().toString()
+                        .contains("Thorsten-Engine fehlt"));
+                activity.findViewById(R.id.speechButton).performClick();
+            });
+            scenario.moveToState(Lifecycle.State.CREATED);
+            prefs.edit().putString("speechEngine", "de.example.missing.engine").commit();
+            scenario.recreate();
+            scenario.moveToState(Lifecycle.State.RESUMED);
+            scenario.onActivity(activity -> {
+                assertEquals("de.example.missing.engine", prefs.getString("speechEngine", ""));
+                assertTrue(((TextView) activity.findViewById(R.id.statusText)).getText().toString()
+                        .contains("Gewählte Sprachengine fehlt"));
+            });
+        } finally {
+            SharedPreferences.Editor edit = prefs.edit();
+            for (String key : keys) {
+                Object old = before.get(key);
+                if (old instanceof String) edit.putString(key, (String) old);
+                else if (old instanceof Boolean) edit.putBoolean(key, (Boolean) old);
+                else edit.remove(key);
+            }
+            edit.commit();
+        }
     }
 
     @Test public void pauseResumeRepeatAndRecreateRemainUsable() {

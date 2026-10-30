@@ -2,6 +2,9 @@ package de.stegmann.kameravorleser;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
+import android.content.ActivityNotFoundException;
+import android.content.pm.ResolveInfo;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.graphics.Rect;
@@ -80,6 +83,9 @@ public class MainActivity extends AppCompatActivity {
     private static final String NARRATOR = "Erzähler";
     private static final String PREFS_NAME = "KameraVorleserPrefs";
     private static final String KEY_SOUNDS_ENABLED = "soundsEnabled";
+    private static final String THORSTEN_ENGINE = "com.k2fsa.sherpa.onnx.tts.engine";
+    private static final String THORSTEN_SETUP = "thorstenEngineConfiguredV1";
+    private static final String THORSTEN_DOWNLOAD = "https://k2-fsa.github.io/sherpa/onnx/tts/apk-engine.html";
 
     // OCR & Text-Erkennungs-Schwellwerte
     private static final int MIN_SPEAKER_NAME_LENGTH = 2;
@@ -127,7 +133,8 @@ public class MainActivity extends AppCompatActivity {
     private String pendingStoryKey = "";
     private int pendingStoryHits = 0;
     private long pendingStorySeenAt = 0L;
-    private float speechRate = 1.15f;
+    private float speechRate = 1.0f;
+    private boolean characterEffects;
     private String cachedSpeaker = "";
     private float cachedPitch = 1.0f;
     private float cachedRate = 1.0f;
@@ -229,15 +236,22 @@ public class MainActivity extends AppCompatActivity {
         // Load sound preference
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         loadDialogueHistory(prefs);
+        // Einmaliger Wechsel auch für bestehende Installationen; spätere manuelle Wahl bleibt erhalten.
+        if (!prefs.getBoolean(THORSTEN_SETUP, false)) {
+            prefs.edit().putString("speechEngine", THORSTEN_ENGINE)
+                    .putString("speechVoice:" + THORSTEN_ENGINE, "")
+                    .putBoolean("characterEffects", false).putBoolean(THORSTEN_SETUP, true).apply();
+        }
         soundsEnabled = prefs.getBoolean(KEY_SOUNDS_ENABLED, true);
-        speechRate = prefs.getFloat("speechRate", 1.15f);
+        speechRate = prefs.getFloat("speechRate", 1.0f);
         volume = prefs.getFloat("volume", 0.8f);
-        if (Float.isNaN(speechRate) || Float.isInfinite(speechRate)) speechRate = 1.15f;
+        if (Float.isNaN(speechRate) || Float.isInfinite(speechRate)) speechRate = 1.0f;
         if (Float.isNaN(volume) || Float.isInfinite(volume)) volume = 0.8f;
         speechRate = Math.max(0.75f, Math.min(1.75f, speechRate));
         volume = Math.max(0f, Math.min(1f, volume));
         speedSeekBar.setProgress(Math.round((speechRate - 0.75f) * 100));
         volumeSeekBar.setProgress(Math.round(volume * 100));
+        characterEffects = prefs.getBoolean("characterEffects", false);
         selectedEngine = prefs.getString("speechEngine", "");
         startSpeechEngine(selectedEngine);
 
@@ -260,7 +274,7 @@ public class MainActivity extends AppCompatActivity {
                 stopSpeech();
                 showStatus("Pausiert", false);
             } else {
-                showStatus("Suche Text …", true);
+                showStatus(ttsReady ? "Suche Text …" : "Offline-Engine nicht bereit · STIMME", ttsReady);
             }
         });
 
@@ -311,6 +325,7 @@ public class MainActivity extends AppCompatActivity {
         invalidateAnalysis();
         stopSpeech();
         if (textToSpeech != null) textToSpeech.shutdown();
+        textToSpeech = null;
         germanVoices.clear();
         cachedSpeaker = "";
         voiceSelection.reset();
@@ -318,6 +333,13 @@ public class MainActivity extends AppCompatActivity {
         selectedEngine = engine;
         selectedVoice = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .getString("speechVoice:" + engine, "");
+        // Der Android-Konstruktor kann bei fehlendem Paket sonst auf die Systemengine ausweichen.
+        if (!engine.isEmpty() && installedEngines().stream().noneMatch(info -> info.name.equals(engine))) {
+            showStatus(engine.equals(THORSTEN_ENGINE)
+                    ? "Thorsten-Engine fehlt · STIMME → Thorsten einrichten"
+                    : "Gewählte Sprachengine fehlt · bitte unter STIMME auswählen", false);
+            return;
+        }
         showStatus("Sprachengine wird geladen …", true);
         // Ein synchroner oder veralteter Init darf niemals eine andere Engine konfigurieren.
         textToSpeech = new TextToSpeech(this, status ->
@@ -329,14 +351,31 @@ public class MainActivity extends AppCompatActivity {
     private void showSpeechSettings() {
         invalidateAnalysis();
         stopSpeech();
-        String[] choices = {"Sprachengine auswählen", "Deutsche Offline-Stimme auswählen",
-                "Probehören: Umlaute und Sprecherwechsel"};
+        String[] choices = {"Thorsten einrichten / aktivieren", "Sprachengine auswählen", "Deutsche Offline-Stimme auswählen",
+                "Probehören: Umlaute und Sprecherwechsel",
+                "Figureneffekte: " + (characterEffects ? "EIN" : "AUS · Originaltonhöhe"),
+                "Normales Sprechtempo (1,0×)"};
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Sprachausgabe")
                 .setItems(choices, (d, which) -> {
-                    if (which == 0) showEnginePicker();
-                    else if (which == 1) showVoicePicker();
-                    else previewVoices();
+                    if (which == 0) setupThorsten();
+                    else if (which == 1) showEnginePicker();
+                    else if (which == 2) showVoicePicker();
+                    else if (which == 3) previewVoices();
+                    else if (which == 4) {
+                        characterEffects = !characterEffects;
+                        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                                .putBoolean("characterEffects", characterEffects).apply();
+                        cachedSpeaker = "";
+                        voiceSelection.reset();
+                        showStatus(characterEffects ? "Figureneffekte eingeschaltet" : "Originaltonhöhe der Engine aktiv", true);
+                    } else {
+                        speechRate = 1f;
+                        ((SeekBar) findViewById(R.id.speedSeekBar)).setProgress(25);
+                        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putFloat("speechRate", 1f).apply();
+                        cachedSpeaker = "";
+                        showStatus("Sprechtempo auf 1,0× gesetzt", true);
+                    }
                 }).setNegativeButton("Schließen", null).create();
         showSpeechDialog(dialog);
     }
@@ -350,12 +389,41 @@ public class MainActivity extends AppCompatActivity {
         dialog.show();
     }
 
+    private List<TextToSpeech.EngineInfo> installedEngines() {
+        List<TextToSpeech.EngineInfo> engines = new ArrayList<>();
+        for (ResolveInfo resolved : getPackageManager().queryIntentServices(
+                new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0)) {
+            if (resolved.serviceInfo == null || !resolved.serviceInfo.enabled) continue;
+            String name = resolved.serviceInfo.packageName;
+            if (engines.stream().anyMatch(info -> info.name.equals(name))) continue;
+            TextToSpeech.EngineInfo info = new TextToSpeech.EngineInfo();
+            info.name = name;
+            info.label = resolved.loadLabel(getPackageManager()).toString();
+            engines.add(info);
+        }
+        return engines;
+    }
+
+    private void setupThorsten() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString("speechEngine", THORSTEN_ENGINE).putBoolean("characterEffects", false).apply();
+        characterEffects = false;
+        startSpeechEngine(THORSTEN_ENGINE);
+        if (textToSpeech != null) return;
+        showSpeechDialog(new AlertDialog.Builder(this).setTitle("Deutsche Thorsten-Engine installieren")
+                .setMessage("Auf der offiziellen Downloadseite die Engine-APK für vits-piper-de_DE-thorsten-high und dein Gerät installieren. Danach hier erneut aktivieren. Die Sprachdaten sind in dieser Engine-APK enthalten; das Modellarchiv allein reicht nicht. Alle Sprachberechnungen laufen anschließend auf dem Gerät.")
+                .setPositiveButton("Downloadseite öffnen", (dialog, which) -> {
+                    try { startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(THORSTEN_DOWNLOAD))); }
+                    catch (ActivityNotFoundException error) { showStatus("Kein Browser zum Öffnen der Downloadseite vorhanden", false); }
+                }).setNegativeButton("Schließen", null).create());
+    }
+
     private void showEnginePicker() {
-        List<TextToSpeech.EngineInfo> engines = textToSpeech.getEngines();
+        List<TextToSpeech.EngineInfo> engines = installedEngines();
         engines.sort(Comparator.comparing(info -> info.label));
         String[] labels = new String[engines.size() + 1];
         labels[0] = "Android-Standard";
-        int checked = 0;
+        int checked = selectedEngine.isEmpty() ? 0 : -1;
         for (int i = 0; i < engines.size(); i++) {
             labels[i + 1] = engines.get(i).label;
             if (engines.get(i).name.equals(selectedEngine)) checked = i + 1;
@@ -384,7 +452,7 @@ public class MainActivity extends AppCompatActivity {
             labels[i + 1] = germanVoices.get(i).getName();
             if (germanVoices.get(i).getName().equals(selectedVoice)) checked = i + 1;
         }
-        showSpeechDialog(new AlertDialog.Builder(this).setTitle("Grundstimme · Figuren wechseln automatisch")
+        showSpeechDialog(new AlertDialog.Builder(this).setTitle("Offline-Grundstimme · gleichwertige Stimmen wechseln")
                 .setSingleChoiceItems(labels, checked, (dialog, which) -> {
                     stopSpeech();
                     selectedVoice = which == 0 ? "" : germanVoices.get(which - 1).getName();
@@ -407,7 +475,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void previewVoice(String speaker, String text, boolean first) {
-        applyVoiceForSpeaker(speaker, 1f, 1f);
+        applyVoiceForSpeaker(speaker);
         if (!ttsReady) { previewSpeech = false; return; }
         Bundle params = new Bundle();
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume);
@@ -448,7 +516,8 @@ public class MainActivity extends AppCompatActivity {
         });
 
         if (!ttsReady) showStatus("Deutsche Offline-Stimme fehlt – bitte in Android installieren", false);
-        else showStatus(paused ? "Pausiert" : "Sprachausgabe bereit", true);
+        else showStatus(paused ? "Pausiert" : selectedEngine.equals(THORSTEN_ENGINE)
+                ? "sherpa-onnx Offline-Engine bereit" : "Sprachausgabe bereit", true);
     }
 
     private void stopSpeech() {
@@ -512,7 +581,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 bindCamera(standardCamera, 1f);
-                showStatus("Suche Text …", true);
+                if (ttsReady) showStatus("Suche Text …", true);
             } catch (Exception error) {
                 showStatus("Kamera konnte nicht gestartet werden", false);
             }
@@ -588,7 +657,7 @@ public class MainActivity extends AppCompatActivity {
             int frameWidth,
             int frameHeight
     ) {
-        if (paused) return;
+        if (paused || !ttsReady) return;
 
         long now = System.currentTimeMillis();
         if (result.getText().isBlank()) {
@@ -709,18 +778,7 @@ public class MainActivity extends AppCompatActivity {
         // Aussprache-Wörterbuch anwenden
         String corrected = PronunciationDictionary.apply(text);
 
-        // Emotionale Variation basierend auf Satzzeichen
-        float emotionPitchMod = 1.0f;
-        float emotionRateMod = 1.0f;
-        if (corrected.contains("!")) {
-            emotionPitchMod = 1.08f;
-            emotionRateMod = 1.06f;
-        } else if (corrected.contains("?")) {
-            emotionPitchMod = 1.05f;
-            emotionRateMod = 0.96f;
-        } else if (corrected.endsWith("...") || corrected.contains(" ... ")) {
-            emotionRateMod = 0.92f;
-        }
+        // Satzmelodie und Betonung übernimmt die Engine; keine Satzzeichen-Pitchsprünge.
 
         // Natürliche Pausen einfügen
         String withPauses = PronunciationDictionary.addNaturalPauses(corrected);
@@ -734,7 +792,7 @@ public class MainActivity extends AppCompatActivity {
         if (speechQueue.size() > 0 && !normalize(speaker).equals(cachedSpeaker)) {
             stopSpeech();
         }
-        applyVoiceForSpeaker(speaker, emotionPitchMod, emotionRateMod);
+        applyVoiceForSpeaker(speaker);
         if (!ttsReady) return false;
 
         // Audio-Feedback bei neuem Text
@@ -1009,9 +1067,12 @@ public class MainActivity extends AppCompatActivity {
                 .thenComparing(Voice::getName));
         germanVoices.clear();
         germanVoices.addAll(allGerman);
+        if (germanVoices.stream().noneMatch(voice -> voice.getName().equals(selectedVoice))) {
+            selectedVoice = "";
+        }
     }
 
-    private void applyVoiceForSpeaker(String speaker, float emotionPitchMod, float emotionRateMod) {
+    private void applyVoiceForSpeaker(String speaker) {
         String key = normalize(speaker);
         VoiceProfile profile = voiceProfileFor(key);
 
@@ -1021,8 +1082,8 @@ public class MainActivity extends AppCompatActivity {
         }
         previousSpeaker = key;
 
-        float targetPitch = SpeakerVoice.pitch(key, profile.pitch, emotionPitchMod);
-        float targetRate = SpeakerVoice.rate(key, profile.rateFactor, speechRate, emotionRateMod);
+        float targetPitch = SpeakerVoice.pitch(key, profile.pitch, characterEffects);
+        float targetRate = SpeakerVoice.rate(key, profile.rateFactor, speechRate, characterEffects);
 
         // Voice-Caching: Nur ändern wenn wirklich nötig
         boolean needsUpdate = !cachedSpeaker.equals(key)
@@ -1031,11 +1092,13 @@ public class MainActivity extends AppCompatActivity {
 
         if (needsUpdate) {
             if (!germanVoices.isEmpty()) {
-                int preferred = profile.voiceSlot;
+                int preferred = 0; // Automatik beginnt bei der bestbewerteten Stimme.
                 for (int i = 0; i < germanVoices.size(); i++) {
                     if (germanVoices.get(i).getName().equals(selectedVoice)) { preferred = i; break; }
                 }
-                int voiceIndex = voiceSelection.select(key, preferred, germanVoices.size());
+                int[] qualities = new int[germanVoices.size()];
+                for (int i = 0; i < qualities.length; i++) qualities[i] = germanVoices.get(i).getQuality();
+                int voiceIndex = voiceSelection.select(key, preferred, qualities);
                 if (textToSpeech.setVoice(germanVoices.get(voiceIndex)) != TextToSpeech.SUCCESS) {
                     ttsReady = false;
                     showStatus("Offline-Stimme konnte nicht geladen werden", false);
@@ -1057,7 +1120,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private float getSpeakerRate(String speakerKey, VoiceProfile profile) {
-        return SpeakerVoice.rate(speakerKey, profile.rateFactor, speechRate, 1f);
+        return SpeakerVoice.rate(speakerKey, profile.rateFactor, speechRate, characterEffects);
     }
 
     private VoiceProfile voiceProfileFor(String speaker) {
@@ -1166,7 +1229,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String voiceProfileLabel(VoiceProfile profile) {
-        float pitch = SpeakerVoice.pitch(normalize(currentSpeaker), profile.pitch, 1f);
+        if (!characterEffects) return "ORIGINALSTIMME";
+        float pitch = SpeakerVoice.pitch(normalize(currentSpeaker), profile.pitch, true);
         if (pitch <= 0.88f) return "SEHR TIEF";
         if (pitch <= 0.96f) return "TIEF";
         if (pitch >= 1.20f) return "SEHR HELL";
@@ -1284,6 +1348,11 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         foreground = true;
         hideSystemBars();
+        // Nach externer Installation ohne Activity-Neustart die gewünschte Engine erneut versuchen.
+        if (textToSpeech == null && !selectedEngine.isEmpty()
+                && installedEngines().stream().anyMatch(info -> info.name.equals(selectedEngine))) {
+            startSpeechEngine(selectedEngine);
+        }
     }
 
     @Override

@@ -4,6 +4,14 @@ package de.stegmann.kameravorleser;
 final class SpeakerVoice {
     private SpeakerVoice() {}
 
+    static float pitch(String speaker, float base, boolean effects) {
+        return effects ? pitch(speaker, base, 1f) : 1f;
+    }
+
+    static float rate(String speaker, float factor, float global, boolean effects) {
+        return effects ? rate(speaker, factor, global, 1f) : global;
+    }
+
     private static float identity(String speaker, long seed) {
         long hash = seed;
         for (int i = 0; i < speaker.length(); i++) hash = (hash ^ speaker.charAt(i)) * 0x100000001b3L;
