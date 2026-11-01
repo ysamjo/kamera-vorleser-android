@@ -23,8 +23,9 @@ final class CloudCredentials {
     }
 
     synchronized String[] read() throws Exception {
-        if (!file.getBaseFile().exists()) return new String[]{"", ""};
-        byte[] all = file.readFully();
+        byte[] all;
+        try { all = file.readFully(); }
+        catch (java.io.FileNotFoundException missing) { return new String[]{"", ""}; }
         if (all.length < 29) throw new java.io.IOException("Zugangsspeicher beschädigt");
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, all, 0, 12));

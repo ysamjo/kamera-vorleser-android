@@ -52,7 +52,12 @@ nur die Variante erhalten, die vollständig gehörte Texte abschneidet. Wrapper 
 zugehörige Profiltests nutzen die bereits vorhandene zurückhaltende Figurenlogik.
 Keine zusätzliche Satzzeichen-/Emotion-Multiplikation im lokalen Modus.
 
-Der aktuelle Android-CI-Status und die Prüfberichte stehen in PR #3. Die CI führt
+CI-Lauf 41289818178 auf `da0b0c3` erfolgreich: Debug-/Release-APKs, beide
+App-Bundles, beide Lint-Varianten, alle 62 Unit-Testmethoden je Variante und
+Instrumentation-APK. Acht davon sind die neuen Cloud-Regressionen.
+Der abschließende Stand liest AtomicFile direkt, damit dessen Backup-Recovery
+auch bei zwischenzeitlich fehlender Hauptdatei greifen kann. Aktueller Status
+und Prüfberichte dieses Abschlussstands stehen in PR #3. Die CI führt
 Debug/Release-APK, beide Bundles, beide Lint-/Unit-Test-Varianten und den
 Instrumentation-APK-Bau aus. Instrumentation wird dort ohne Gerät nicht ausgeführt.
 In dieser Arbeitsumgebung fehlen ein funktionsfähiges JDK/Android-SDK und ein
