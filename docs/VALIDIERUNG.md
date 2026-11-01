@@ -10,6 +10,8 @@ https://github.com/ysamjo/kamera-vorleser-android/pull/3
   INTERNET-Berechtigung hinzugefügt. Lokale Engine weiterhin explizit wählbar.
 - Fish-Anfrage: `POST https://api.fish.audio/v1/tts`, Bearer-Schlüssel,
   `model: drama-3`, deutsche Normalisierung, konfigurierbare Voice-IDs, MP3.
+  Bei HTTP 402 (unzureichende API-Credits / Gratis-Paket) automatischer Ausweichversuch
+  auf das kostenlose Modell `s2.1-pro-free`, bevor Google Chirp als Backup greift.
   Kurze natürliche Figurenanweisungen nur bei aktivierten Figureneffekten.
 - Backup: `POST https://texttospeech.googleapis.com/v1/text:synthesize`,
   deutscher Chirp-3-HD-Stimmenpool, MP3 aus Base64, keine Fish-Regieanweisungen

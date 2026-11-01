@@ -30,13 +30,12 @@ final class CloudSpeechClient {
     CloudFallback.Audio synthesize(CloudSpeechRequest request, String fishKey, String googleKey, Job job) throws IOException {
         return CloudFallback.synthesize(
                 fishKey.isEmpty() || request.fishVoice.isEmpty() ? null : () -> audio(
-                        post("https://api.fish.audio/v1/tts", "Authorization", "Bearer " + fishKey,
-                                request.fishBody(), true, job)),
+                        fishSynthesize(request, fishKey, job)),
                 googleKey.isEmpty() ? null : () -> {
                     boolean bearer = googleKey.startsWith("Bearer ");
                     byte[] json = post("https://texttospeech.googleapis.com/v1/text:synthesize",
                             bearer ? "Authorization" : "X-Goog-Api-Key", googleKey,
-                            request.googleBody(), false, job);
+                            request.googleBody(), null, job);
                     try {
                         return audio(Base64.decode(new JSONObject(new String(json, StandardCharsets.UTF_8))
                                 .getString("audioContent"), Base64.DEFAULT));
@@ -46,8 +45,21 @@ final class CloudSpeechClient {
                 }, () -> job.cancelled);
     }
 
+    private byte[] fishSynthesize(CloudSpeechRequest request, String fishKey, Job job) throws IOException {
+        try {
+            return post("https://api.fish.audio/v1/tts", "Authorization", "Bearer " + fishKey,
+                    request.fishBody(), "drama-3", job);
+        } catch (IOException error) {
+            if (error.getMessage() != null && error.getMessage().contains("HTTP 402")) {
+                return post("https://api.fish.audio/v1/tts", "Authorization", "Bearer " + fishKey,
+                        request.fishBody(), "s2.1-pro-free", job);
+            }
+            throw error;
+        }
+    }
+
     private byte[] post(String endpoint, String authHeader, String credential, String body,
-                        boolean fish, Job job) throws IOException {
+                        String model, Job job) throws IOException {
         if (credential.indexOf('\r') >= 0 || credential.indexOf('\n') >= 0) {
             throw new IOException("Zugangsdaten enthalten einen Zeilenumbruch");
         }
@@ -61,14 +73,14 @@ final class CloudSpeechClient {
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty(authHeader, credential);
-            if (fish) connection.setRequestProperty("model", "drama-3");
+            if (model != null) connection.setRequestProperty("model", model);
             byte[] payload = body.getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(payload.length);
             try (java.io.OutputStream out = connection.getOutputStream()) { out.write(payload); }
             int status = connection.getResponseCode();
             if (status != 200) {
                 // Keine Anbieter-Fehlermeldungen mit Dialogen oder Zugangsdaten loggen/anzeigen.
-                throw new IOException((fish ? "Fish Audio" : "Google Chirp") + ": HTTP " + status);
+                throw new IOException((model != null ? "Fish Audio" : "Google Chirp") + ": HTTP " + status);
             }
             try (InputStream in = connection.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
                 byte[] buffer = new byte[8192];
