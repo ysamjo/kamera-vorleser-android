@@ -360,9 +360,14 @@ public class MainActivity extends AppCompatActivity {
             try {
                 String[] keys = cloudCredentials.read();
                 fishKey = keys[0]; googleKey = keys[1];
-                ttsReady = (!fishKey.isEmpty() && !CloudVoiceProfiles.parse(
-                        cloudPrefs.getString("cloudFishVoices", ""), true).isEmpty()) || !googleKey.isEmpty();
-                showStatus(ttsReady ? "Fish Audio → Google-Backup bereit" : "Fish Audio / Google unter STIMME einrichten", ttsReady);
+                boolean fishConfigured = !fishKey.isEmpty() && !CloudVoiceProfiles.parse(
+                        cloudPrefs.getString("cloudFishVoices", ""), true).isEmpty();
+                ttsReady = fishConfigured || !googleKey.isEmpty();
+                String cloudStatus = !ttsReady ? "Fish Audio / Google unter STIMME einrichten"
+                        : !fishConfigured ? "Nur Google-Backup konfiguriert · Fish Audio fehlt"
+                        : googleKey.isEmpty() ? "Fish Audio konfiguriert · Google-Backup fehlt"
+                        : "Fish Audio → Google-Backup konfiguriert";
+                showStatus(cloudStatus, ttsReady);
             } catch (Exception error) { showStatus("Cloud-Zugänge unter STIMME prüfen", false); }
             return;
         }
@@ -505,7 +510,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void previewVoices() {
         if (!ttsReady || !foreground) {
-            showStatus("Bitte zuerst eine deutsche Offline-Stimme auswählen", false);
+            showStatus(cloudSpeechEnabled ? "Bitte zuerst Fish / Google unter STIMME einrichten"
+                    : "Bitte zuerst eine deutsche Offline-Stimme auswählen", false);
             return;
         }
         stopSpeech();
