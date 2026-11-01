@@ -7,6 +7,12 @@
 
 ## Aktueller Umsetzungsstand
 
+**Nutzerauftrag 01.11.2026:** Cloud-TTS mit Fish Audio Drama 3 primär und Google
+Chirp 3 HD als Backup. Dies ersetzt für die neue Standard-Sprachausgabe das frühere
+Offline-only-Ziel; OCR bleibt offline, Bilder werden nicht übertragen. Lokale
+Sprachausgabe bleibt ausdrücklich wählbar. Umsetzung und offene Hör-/Gerätetests
+stehen im neuesten Abschnitt von VALIDIERUNG.md.
+
 KAV-01–04 technisch umgesetzt; Geräte-Matrix und reale Fehler-/Recovery-Szenarien
 noch offen. KAV-06 implementiert und Queue-Logik getestet. KAV-10/11 sowie KAV-13
 teilweise umgesetzt. KAV-12/14: reine Komponenten, 15 Unit-Tests und drei
@@ -281,3 +287,4 @@ Zunächst eine **Baseline** auf mindestens zwei realen Android-Geräten mit dens
 - [`README.md`](../README.md)
 
 **Pflege:** Nach jedem abgeschlossenen PR die zugehörigen Checkboxen und Ergebnisse aktualisieren; neue Befunde mit KAV-ID ergänzen.
+

@@ -123,6 +123,13 @@ public class MainActivity extends AppCompatActivity {
     private ExecutorService cameraExecutor;
     private TextRecognizer textRecognizer;
     private TextToSpeech textToSpeech;
+    private CloudSpeechPlayer cloudPlayer;
+    private CloudCredentials cloudCredentials;
+    private boolean cloudSpeechEnabled;
+    private String fishKey = "", googleKey = "";
+    private long nextCloudAttemptAt;
+    private final VoiceAssignments cloudFishAssignments = new VoiceAssignments();
+    private final VoiceAssignments cloudGoogleAssignments = new VoiceAssignments();
     private volatile boolean ttsReady = false;
     private volatile boolean paused = false;
     private volatile boolean foreground = false;
@@ -233,6 +240,14 @@ public class MainActivity extends AppCompatActivity {
         cameraExecutor = Executors.newSingleThreadExecutor();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
 
+        cloudCredentials = new CloudCredentials(this);
+        cloudPlayer = new CloudSpeechPlayer(this, new CloudSpeechPlayer.Listener() {
+            @Override public void status(String id, String message) {
+                if (foreground && !destroyed && speechQueue.contains(id)) showStatus(message, true);
+            }
+            @Override public void finished(String id, boolean failed) { finishSpeech(id, failed); }
+        });
+
         // Load sound preference
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         loadDialogueHistory(prefs);
@@ -242,6 +257,12 @@ public class MainActivity extends AppCompatActivity {
                     .putString("speechVoice:" + THORSTEN_ENGINE, "")
                     .putBoolean("characterEffects", false).putBoolean(THORSTEN_SETUP, true).apply();
         }
+        if (!prefs.getBoolean("cloudSpeechConfiguredV1", false)) {
+            prefs.edit().putBoolean("cloudSpeechConfiguredV1", true)
+                    .putBoolean("cloudSpeechEnabled", true).putBoolean("characterEffects", true).apply();
+        }
+        restoreCloudAssignments(prefs, "cloudFishAssignments", cloudFishAssignments);
+        restoreCloudAssignments(prefs, "cloudGoogleAssignments", cloudGoogleAssignments);
         soundsEnabled = prefs.getBoolean(KEY_SOUNDS_ENABLED, true);
         speechRate = prefs.getFloat("speechRate", 1.0f);
         volume = prefs.getFloat("volume", 0.8f);
@@ -274,7 +295,7 @@ public class MainActivity extends AppCompatActivity {
                 stopSpeech();
                 showStatus("Pausiert", false);
             } else {
-                showStatus(ttsReady ? "Suche Text …" : "Offline-Engine nicht bereit · STIMME", ttsReady);
+                showStatus(ttsReady ? "Suche Text …" : "Sprachausgabe unter STIMME einrichten", ttsReady);
             }
         });
 
@@ -333,6 +354,18 @@ public class MainActivity extends AppCompatActivity {
         selectedEngine = engine;
         selectedVoice = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .getString("speechVoice:" + engine, "");
+        SharedPreferences cloudPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        cloudSpeechEnabled = cloudPrefs.getBoolean("cloudSpeechEnabled", true);
+        if (cloudSpeechEnabled) {
+            try {
+                String[] keys = cloudCredentials.read();
+                fishKey = keys[0]; googleKey = keys[1];
+                ttsReady = (!fishKey.isEmpty() && !CloudVoiceProfiles.parse(
+                        cloudPrefs.getString("cloudFishVoices", ""), true).isEmpty()) || !googleKey.isEmpty();
+                showStatus(ttsReady ? "Fish Audio → Google-Backup bereit" : "Fish Audio / Google unter STIMME einrichten", ttsReady);
+            } catch (Exception error) { showStatus("Cloud-Zugänge unter STIMME prüfen", false); }
+            return;
+        }
         // Der Android-Konstruktor kann bei fehlendem Paket sonst auf die Systemengine ausweichen.
         if (!engine.isEmpty() && installedEngines().stream().noneMatch(info -> info.name.equals(engine))) {
             showStatus(engine.equals(THORSTEN_ENGINE)
@@ -351,31 +384,35 @@ public class MainActivity extends AppCompatActivity {
     private void showSpeechSettings() {
         invalidateAnalysis();
         stopSpeech();
-        String[] choices = {"Thorsten einrichten / aktivieren", "Sprachengine auswählen", "Deutsche Offline-Stimme auswählen",
-                "Probehören: Umlaute und Sprecherwechsel",
-                "Figureneffekte: " + (characterEffects ? "EIN" : "AUS · Originaltonhöhe"),
-                "Normales Sprechtempo (1,0×)"};
+        String[] choices = {"Fish Audio + Google-Backup einrichten", "Probehören: Umlaute und Sprecherwechsel",
+                "Figureneffekte: " + (characterEffects ? "EIN" : "AUS"), "Normales Sprechtempo (1,0×)",
+                "Lokale Sprachengine auswählen", "Deutsche Offline-Stimme auswählen", "Thorsten einrichten / aktivieren"};
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Sprachausgabe")
                 .setItems(choices, (d, which) -> {
-                    if (which == 0) setupThorsten();
-                    else if (which == 1) showEnginePicker();
-                    else if (which == 2) showVoicePicker();
-                    else if (which == 3) previewVoices();
-                    else if (which == 4) {
+                    if (which == 0) {
+                        showSpeechDialog(CloudSpeechSettingsDialog.create(this,
+                                getSharedPreferences(PREFS_NAME, MODE_PRIVATE), cloudCredentials, () -> {
+                                    nextCloudAttemptAt = 0;
+                                    startSpeechEngine(selectedEngine);
+                                }));
+                    } else if (which == 1) previewVoices();
+                    else if (which == 2) {
                         characterEffects = !characterEffects;
                         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                                 .putBoolean("characterEffects", characterEffects).apply();
                         cachedSpeaker = "";
                         voiceSelection.reset();
-                        showStatus(characterEffects ? "Figureneffekte eingeschaltet" : "Originaltonhöhe der Engine aktiv", true);
-                    } else {
+                        showStatus(characterEffects ? "Figureneffekte eingeschaltet" : "Figureneffekte ausgeschaltet", true);
+                    } else if (which == 3) {
                         speechRate = 1f;
                         ((SeekBar) findViewById(R.id.speedSeekBar)).setProgress(25);
                         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putFloat("speechRate", 1f).apply();
                         cachedSpeaker = "";
                         showStatus("Sprechtempo auf 1,0× gesetzt", true);
-                    }
+                    } else if (which == 4) showEnginePicker();
+                    else if (which == 5) showVoicePicker();
+                    else setupThorsten();
                 }).setNegativeButton("Schließen", null).create();
         showSpeechDialog(dialog);
     }
@@ -408,6 +445,7 @@ public class MainActivity extends AppCompatActivity {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                 .putString("speechEngine", THORSTEN_ENGINE).putBoolean("characterEffects", false).apply();
         characterEffects = false;
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putBoolean("cloudSpeechEnabled", false).apply();
         startSpeechEngine(THORSTEN_ENGINE);
         if (textToSpeech != null) return;
         showSpeechDialog(new AlertDialog.Builder(this).setTitle("Deutsche Thorsten-Engine installieren")
@@ -433,6 +471,7 @@ public class MainActivity extends AppCompatActivity {
                     String engine = which == 0 ? "" : engines.get(which - 1).name;
                     getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                             .putString("speechEngine", engine).apply();
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putBoolean("cloudSpeechEnabled", false).apply();
                     startSpeechEngine(engine);
                     dialog.dismiss();
                 }).setNegativeButton("Abbrechen", null).create());
@@ -475,6 +514,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void previewVoice(String speaker, String text, boolean first) {
+        if (cloudSpeechEnabled) {
+            if (!submitCloudSpeech(text, speaker, first ? "preview:first" : "preview:last")) previewSpeech = false;
+            return;
+        }
         applyVoiceForSpeaker(speaker);
         if (!ttsReady) { previewSpeech = false; return; }
         Bundle params = new Bundle();
@@ -530,6 +573,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         // Vor stop() entwerten: Engines dürfen sofort oder später zurückrufen.
+        if (cloudPlayer != null) cloudPlayer.stop();
         if (textToSpeech != null) textToSpeech.stop();
     }
 
@@ -554,12 +598,13 @@ public class MainActivity extends AppCompatActivity {
             }
             if (dialogueHistory.finish(key, !failed)) saveDialogueHistory();
             if (failed) {
+                if (cloudSpeechEnabled) nextCloudAttemptAt = android.os.SystemClock.elapsedRealtime() + 10000L;
                 if (key.equals(DialogueHistory.key(lastSpokenSpeaker, lastSpokenNormalized))) {
                     resetLastSpoken();
                 }
             }
             if (foreground && !paused && speechQueue.size() == 0) {
-                showStatus(failed ? "Sprachausgabe fehlgeschlagen – versuche erneut" : "Suche Text …", !failed);
+                showStatus(failed ? "Sprachausgabe fehlgeschlagen · Zugang/Netz prüfen; neuer Versuch in 10 s" : "Suche Text …", !failed);
             }
         });
     }
@@ -657,7 +702,8 @@ public class MainActivity extends AppCompatActivity {
             int frameWidth,
             int frameHeight
     ) {
-        if (paused || !ttsReady) return;
+        if (paused || !ttsReady || (cloudSpeechEnabled
+                && android.os.SystemClock.elapsedRealtime() < nextCloudAttemptAt)) return;
 
         long now = System.currentTimeMillis();
         if (result.getText().isBlank()) {
@@ -775,6 +821,14 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean speak(String text, String speaker, String dialogueKey) {
         if (!ttsReady || paused || !foreground || destroyed) return false;
+        if (cloudSpeechEnabled) {
+            if (android.os.SystemClock.elapsedRealtime() < nextCloudAttemptAt) return false;
+            if (speechQueue.size() > 0 && !normalize(speaker).equals(cachedSpeaker)) stopSpeech();
+            String key = DialogueHistory.key(speaker, dialogueKey);
+            if (!submitCloudSpeech(text, speaker, key)) return false;
+            dialogueHistory.begin(key);
+            return true;
+        }
         // Aussprache-Wörterbuch anwenden
         String corrected = PronunciationDictionary.apply(text);
 
@@ -810,6 +864,43 @@ public class MainActivity extends AppCompatActivity {
         }
         dialogueHistory.begin(DialogueHistory.key(speaker, dialogueKey));
         return true;
+    }
+
+    private boolean submitCloudSpeech(String text, String speaker, String historyKey) {
+        try {
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            String fishVoice = cloudFishAssignments.choose(speaker, CloudVoiceProfiles.parse(
+                    prefs.getString("cloudFishVoices", ""), true));
+            String googleVoice = cloudGoogleAssignments.choose(speaker, CloudVoiceProfiles.parse(
+                    prefs.getString("cloudGoogleVoices", CloudVoiceProfiles.GOOGLE_DEFAULTS), false));
+            VoiceProfile profile = voiceProfileFor(normalize(speaker));
+            CloudSpeechRequest request = new CloudSpeechRequest(text, fishVoice == null ? "" : fishVoice,
+                    googleVoice == null ? "de-DE-Chirp3-HD-Charon" : googleVoice,
+                    characterEffects ? CloudVoiceProfiles.direction(profile.pitch, profile.rateFactor) : "",
+                    speechRate);
+            boolean accepted = speechQueue.submit(historyKey, id ->
+                    cloudPlayer.speak(id, request, fishKey, googleKey, volume));
+            if (accepted) {
+                cachedSpeaker = normalize(speaker);
+                prefs.edit().putString("cloudFishAssignments", new org.json.JSONObject(cloudFishAssignments.snapshot()).toString())
+                        .putString("cloudGoogleAssignments", new org.json.JSONObject(cloudGoogleAssignments.snapshot()).toString()).apply();
+            }
+            return accepted;
+        } catch (IllegalArgumentException error) {
+            showStatus(error.getMessage(), false);
+            return false;
+        }
+    }
+
+    private void restoreCloudAssignments(SharedPreferences prefs, String key, VoiceAssignments assignments) {
+        try {
+            org.json.JSONObject saved = new org.json.JSONObject(prefs.getString(key, "{}"));
+            java.util.Iterator<String> speakers = saved.keys();
+            while (speakers.hasNext()) {
+                String speaker = speakers.next();
+                assignments.put(speaker, saved.getString(speaker));
+            }
+        } catch (org.json.JSONException ignored) { /* Ungültige Zuordnungen neu vergeben. */ }
     }
 
     private String detectSpeaker(
@@ -1229,6 +1320,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String voiceProfileLabel(VoiceProfile profile) {
+        if (cloudSpeechEnabled) return characterEffects ? "FIGURENSTIMME · FISH / CHIRP" : "FISH / CHIRP";
         if (!characterEffects) return "ORIGINALSTIMME";
         float pitch = SpeakerVoice.pitch(normalize(currentSpeaker), profile.pitch, true);
         if (pitch <= 0.88f) return "SEHR TIEF";
@@ -1349,7 +1441,7 @@ public class MainActivity extends AppCompatActivity {
         foreground = true;
         hideSystemBars();
         // Nach externer Installation ohne Activity-Neustart die gewünschte Engine erneut versuchen.
-        if (textToSpeech == null && !selectedEngine.isEmpty()
+        if (!cloudSpeechEnabled && textToSpeech == null && !selectedEngine.isEmpty()
                 && installedEngines().stream().anyMatch(info -> info.name.equals(selectedEngine))) {
             startSpeechEngine(selectedEngine);
         }
@@ -1491,10 +1583,9 @@ public class MainActivity extends AppCompatActivity {
         foreground = false;
         invalidateAnalysis();
         super.onDestroy();
-        if (textToSpeech != null) {
-            stopSpeech();
-            textToSpeech.shutdown();
-        }
+        stopSpeech();
+        if (cloudPlayer != null) cloudPlayer.close();
+        if (textToSpeech != null) textToSpeech.shutdown();
         if (textRecognizer != null && !ocrBusy.get()) textRecognizer.close();
         if (cameraExecutor != null) cameraExecutor.shutdown();
         if (toneGenerator != null) {
@@ -1503,3 +1594,4 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 }
+

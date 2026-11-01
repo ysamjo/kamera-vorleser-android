@@ -40,9 +40,10 @@ public class LifecycleSmokeTest {
                 context.getPackageManager().queryIntentServices(
                         new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE).setPackage(engine), 0).isEmpty());
         SharedPreferences prefs = context.getSharedPreferences("KameraVorleserPrefs", Context.MODE_PRIVATE);
-        String[] keys = {"speechEngine", "characterEffects", "thorstenEngineConfiguredV1", "speechVoice:" + engine};
+        String[] keys = {"speechEngine", "characterEffects", "thorstenEngineConfiguredV1", "speechVoice:" + engine, "cloudSpeechEnabled", "cloudSpeechConfiguredV1"};
         java.util.Map<String, ?> before = prefs.getAll();
-        prefs.edit().remove("thorstenEngineConfiguredV1").putString("speechEngine", "")
+        prefs.edit().putBoolean("cloudSpeechConfiguredV1", true).putBoolean("cloudSpeechEnabled", false)
+                .remove("thorstenEngineConfiguredV1").putString("speechEngine", "")
                 .putBoolean("characterEffects", true).commit();
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {
@@ -128,3 +129,4 @@ public class LifecycleSmokeTest {
         }
     }
 }
+
