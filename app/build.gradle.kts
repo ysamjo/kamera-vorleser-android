@@ -10,8 +10,8 @@ android {
         applicationId = "de.stegmann.kameravorleser"
         minSdk = 23
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -51,3 +51,4 @@ dependencies {
     // Das OCR-Modell ist in der App enthalten: sofort einsatzbereit, auch offline.
     implementation("com.google.mlkit:text-recognition:16.0.1")
 }
+

@@ -2,7 +2,9 @@
 
 ## Kontext und Grenzen
 Native Android-App (Java 17, CameraX, gebündeltes ML Kit, Android-TTS).
-Offline-OCR ist Pflicht; keine Cloud-Dienste und keine Übertragung von Bildern/Texten.
+Offline-OCR ist Pflicht. Seit Nutzerauftrag vom 01.11.2026: Fish Audio Drama 3
+als primäre Cloud-TTS, Google Chirp 3 HD als Backup. Nur Dialogtext übertragen,
+keine Kamerabilder. Ein explizit gewählter lokaler TTS-Modus bleibt offline.
 `MainActivity` besitzt UI, Dialogzustand und TTS auf dem Main Thread. Der
 CameraX-Executor nimmt Frames an. ML-Kit-Abschluss läuft explizit auf dem Main
 Thread; Bilddaten bleiben bis zum Abschluss gültig. `FrameRelease` gibt genau
@@ -22,14 +24,17 @@ CI: `.github/workflows/android.yml` führt dieselben Prüfungen unter Linux/JDK 
 aus. Keine Lint-Baseline verwenden, um neue Fehler zu verstecken. Lokale Archive
 liegen unter `Archiv/` und bleiben außerhalb von Git.
 
-`PronunciationDictionary` ist reine Textlogik mit Unicode-Wortgrenzen. Nur lokale,
-installierte deutsche TTS-Stimmen verwenden; kein Netzwerkfallback.
+`PronunciationDictionary` ist reine Textlogik mit Unicode-Wortgrenzen. Im lokalen Modus nur lokale,
+installierte deutsche TTS-Stimmen verwenden. Cloud-Modus: Fish zuerst, nur bei
+Synthesefehlern oder fehlender Fish-Konfiguration Google. Stop ist kein Fehler
+und darf kein Backup auslösen. Zugangsdaten nur über CloudCredentials speichern.
 
 `TextRules` enthält unverändert extrahierte Filter und Ähnlichkeitsschwellen.
 Instrumentation bauen: `./gradlew :app:assembleDebugAndroidTest`.
 Instrumentation ausführen: `ANDROID_SERIAL=<ADB-Gerät> ./gradlew :app:connectedDebugAndroidTest`.
 Gerät wach/entsperrt halten; übersprungene Tests ausdrücklich berichten.
-Das zusammengeführte App-Manifest darf keine INTERNET-Berechtigung enthalten.
+Das zusammengeführte App-Manifest benötigt für Cloud-TTS INTERNET.
+Keine Anbieter-Requests aus Tests ohne explizite Test-Zugangsdaten.
 
 `DialogueHistory` trennt laufende von abgeschlossenen Dialogen. Nur `finish(key,
 true)` nach `onDone` speichert dauerhaft; Stop/Fehler geben nur laufende Einträge
@@ -39,3 +44,4 @@ löschen. TTS-Abschluss und Initialisierung immer auf den Main Thread posten.
 Auch Normalisierung und Namensentfernung müssen zusammengesetzte Umlaute erhalten.
 Vollprüfung: `./gradlew :app:assembleDebug :app:assembleRelease :app:bundleDebug
 :app:bundleRelease :app:lintDebug :app:lintRelease :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleDebugAndroidTest` (eine Zeile).
+

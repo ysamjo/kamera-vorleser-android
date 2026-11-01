@@ -1,5 +1,66 @@
 # Pokopia Story-Vorleser
 
+## Sprachausgabe ab Version 1.4: Fish Audio mit Google-Backup
+
+**Fish Audio Drama 3 ist primär, Google Cloud Chirp 3 HD ist Backup.**
+Kamera und gebündeltes ML-Kit-OCR laufen weiterhin auf dem Gerät. Im Cloud-Modus
+wird ausschließlich der erkannte Dialogtext per HTTPS übertragen. Die App benötigt
+hierfür Internet. Die folgenden historischen Offline-Beschreibungen beziehen
+sich auf den weiterhin auswählbaren lokalen TTS-Modus.
+
+Einrichtung unter **STIMME → Fish Audio + Google-Backup einrichten**:
+
+1. Eigenen Fish-API-Schlüssel und mindestens eine **Fish Voice-ID** eintragen.
+   Mehrere IDs mit Komma trennen. IDs stammen aus der Fish-Stimmenbibliothek;
+   keine Bibliotheks-URL einfügen. Der Request setzt explizit `model: drama-3`.
+2. Google-Cloud-TTS-API im eigenen Projekt einschalten und Abrechnung aktivieren.
+   Einen für Cloud Text-to-Speech gültigen Cloud-API-Key oder vorübergehend einen
+   OAuth-Zugang als `Bearer <Access-Token>` eintragen. Ein Gemini-/AI-Studio-Key
+   ist kein Cloud-TTS-Zugang. Bearer-Tokens laufen ab und werden hier nicht erneuert.
+3. Die vorgeschlagenen deutschen `de-DE-Chirp3-HD-…`-Backup-Stimmen übernehmen
+   oder eine eigene kommagetrennte Liste deutscher Chirp-3-HD-Stimmen eintragen.
+4. Speichern und Probehören. Der Status nennt bei Wiedergabe Fish Audio oder
+   Google Chirp / Backup. Das gespeicherte Dialoggedächtnis bleibt erhalten.
+
+Die App vergibt pro Pokémon eine gespeicherte Grundstimme; mit mehreren Fish-IDs
+werden zunächst unterschiedliche Stimmen verteilt. Figureneffekte sind beim
+Wechsel auf diese Version eingeschaltet und senden an Fish kurze deutsche
+Regieanweisungen. Google erhält ausschließlich den Dialogtext, keine Fish-Tags.
+Tempo wird von beiden APIs angefragt. Bei nur einer Fish-ID bleibt die Grundstimme
+gleich; Emotionen erzeugen keine Garantie für hörbar verschiedene Figuren.
+
+Bei Fish-HTTP-Fehlern, Zeitüberschreitungen oder ungültiger Syntheseantwort folgt
+höchstens ein Google-Versuch. Fehlt Fish-Schlüssel oder Voice-ID, kann nur ein
+konfiguriertes Google-Backup sprechen. Fehlt Google, bleibt es bei Fish. Scheitern
+beide, bleibt der Dialog ungelesen und wird frühestens nach zehn Sekunden erneut
+versucht. Stop/Pause/Sprecherwechsel/Hintergrund entwerten Ausgabe-IDs und brechen
+HTTP/Wiedergabe ab. Bereits beim Anbieter angenommene Requests können trotzdem
+berechnet werden. Ein Wiedergabefehler nach erfolgreicher Synthese löst keinen
+zweiten kostenpflichtigen Syntheseversuch aus.
+
+Zugangsdaten sind nutzereigene Schlüssel, **keine eingebauten Demo-Schlüssel**.
+Sie werden mit Android Keystore / AES-GCM im `noBackupFilesDir` gespeichert;
+keine Klartext-Preferences, keine Backups und keine Anbieter-Fehlerpayloads im Log.
+Leere Schlüsselfelder behalten vorhandene Zugänge; „Zugänge löschen“ entfernt beide.
+Bei Weitergabe als öffentliches Produkt sollten eigene Nutzerkonten oder ein
+Backend verwendet werden, kein gemeinsamer eingebetteter Anbieter-Schlüssel.
+
+Audio liegt nur vorübergehend im privaten Cache und wird nach Ausgabe/Stop
+entfernt. Maximal zwei Ausgaben, maximal 5000 UTF-8-Bytes Dialogtext je Ausgabe;
+keine stille Kürzung. Es gibt keine automatische Erkennung des kostenlosen
+Anbieterkontingents und keine garantierte Kostenobergrenze. Fish-Drama-3 und das
+Google-Backup können Gebühren verursachen. Keine echten API-Aufrufe durch CI.
+
+Zum Offline-Modus: unter STIMME eine lokale Sprachengine explizit auswählen oder
+im Cloud-Dialog das Cloud-Häkchen ausschalten. Der App bleiben dann die installierten
+lokalen deutschen Stimmen zugänglich; der Cloud-Player macht keine Requests.
+
+API-Dokumentation:
+- https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech
+- https://docs.cloud.google.com/text-to-speech/docs/chirp3-hd
+- https://docs.cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize
+
+
 Ein schneller Vorleser für die deutschen Storydialoge von Pokémon Pokopia. Die Rückkamera läuft dauerhaft, wertet nur die Dialogbox im unteren Bildschirmbereich aus und liest neue Storyzeilen sofort vor.
 
 ## Starten
@@ -115,3 +176,4 @@ Bereitgestellte Dateien (Build-Ausgaben, außerhalb von Git):
 - Deutsche Engine für ARM64: `app/build/outputs/tts-engine/thorsten-high-arm64.apk`
 
 Offizielle Downloadübersicht: https://k2-fsa.github.io/sherpa/onnx/tts/apk-engine.html
+

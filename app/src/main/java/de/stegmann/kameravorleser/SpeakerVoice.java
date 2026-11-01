@@ -5,11 +5,11 @@ final class SpeakerVoice {
     private SpeakerVoice() {}
 
     static float pitch(String speaker, float base, boolean effects) {
-        return effects ? pitch(speaker, base, 1f) : 1f;
+        return effects ? pitch(speaker, base) : 1f;
     }
 
     static float rate(String speaker, float factor, float global, boolean effects) {
-        return effects ? rate(speaker, factor, global, 1f) : global;
+        return effects ? rate(speaker, factor, global) : global;
     }
 
     private static float identity(String speaker, long seed) {
@@ -30,3 +30,4 @@ final class SpeakerVoice {
                 + identity(speaker, 0x84222325cbf29ce4L) * .04f;
     }
 }
+
