@@ -1,5 +1,76 @@
 # Umsetzung und Validierung
 
+## 01.11.2026 · Fish Audio primär, Google Chirp als Backup (1.4 / Code 5)
+
+Umsetzung im Branch `feat/fish-audio-chirp-backup`, PR:
+https://github.com/ysamjo/kamera-vorleser-android/pull/3
+
+- Nutzerauftrag ersetzt für Cloud-TTS das frühere reine Offline-Ziel. Kamera und
+  ML-Kit bleiben lokal; HTTPS-Anfragen enthalten Dialogtext, keine Bilder.
+  INTERNET-Berechtigung hinzugefügt. Lokale Engine weiterhin explizit wählbar.
+- Fish-Anfrage: `POST https://api.fish.audio/v1/tts`, Bearer-Schlüssel,
+  `model: drama-3`, deutsche Normalisierung, konfigurierbare Voice-IDs, MP3.
+  Kurze natürliche Figurenanweisungen nur bei aktivierten Figureneffekten.
+- Backup: `POST https://texttospeech.googleapis.com/v1/text:synthesize`,
+  deutscher Chirp-3-HD-Stimmenpool, MP3 aus Base64, keine Fish-Regieanweisungen
+  im Vorlesetext. Google-Cloud-Key als Header oder expliziter Bearer-Access-Token.
+  Token-Refresh ist nicht implementiert. Projekt/API/Abrechnung muss der Nutzer
+  selbst einrichten; kein Gemini-Key und kein eingebauter Anbieter-Schlüssel.
+- Pro Ausgabe höchstens ein Fish- und ein Google-Versuch. Bei fehlendem Fish-Zugang
+  ist Google direkt nutzbar. Ohne Google-Konfiguration kein Backup-Request.
+  Nach beidseitigem Fehler zehn Sekunden Ruhezeit, keine sofortige OCR-Retry-Schleife.
+  Ein Decoder-/Wiedergabefehler nach erfolgreicher Synthese löst keinen zweiten
+  Syntheseversuch aus. Keine Erkennung des Provider-Freikontingents/Kostensperre.
+- Netzwerk/Datei-IO auf einem Worker; Queue, UI, MediaPlayer und Historie auf dem
+  Main Thread. Stop entwertet IDs, trennt HTTP, entwertet zurückkommende Ergebnisse
+  und gibt MediaPlayer/MP3-Dateien frei. Ein Anbieter kann eine bereits angenommene
+  abgebrochene Anfrage trotzdem berechnen. Nur Wiedergabeabschluss speichert Dialoge.
+- Eigene Zugänge AES-GCM/Android Keystore, Datei im `noBackupFilesDir`.
+  Schlüssel nicht in Preferences, Logs, Repository oder Backups. Redirects aus,
+  feste HTTPS-Endpunkte, keine Anbieter-Fehlerpayloads angezeigt. Passworteingaben
+  ohne View-State/Autofill und mit FLAG_SECURE für den Zugangsdialog.
+- Temporäre Audiodateien im privaten Cache, nach Ende/Stop gelöscht; auf Neustart
+  hinterlassene Dateien werden entfernt. Kein dauerhafter Audio-Cache.
+- Stabile gespeicherte Figurenzuordnung auf konfigurierbare Pools. Google-Standard:
+  de-DE-Chirp3-HD-Charon/Kore/Puck/Aoede. Ein Fish-Modell allein ist eine Grundstimme;
+  mehrere echte Figurenstimmen brauchen mehrere eigene Voice-IDs. Natürliche
+  Regieanweisungen garantieren keine bestimmte Tonhöhe.
+- NFC-Umlaute/JSON-Escaping erhalten; 5000 UTF-8-Bytes je Dialog, keine Kürzung.
+  Die Eingabegrenze berücksichtigt im Google-Pfad den reinen Dialogtext.
+
+### Prüfungen und Grenzen
+
+Acht neue Unit-Testmethoden decken Primary/Backup-Reihenfolge, fehlende Anbieter,
+Fehler und Abbruch während Requests, späten Erfolg nach Stop, deutsche Zeichen,
+JSON-Escaping, UTF-8-Grenzen und Stimmenpools ab. Sie verwenden Fake-Anbieter,
+keine Schlüssel, echten Dialoge oder kostenpflichtigen Requests.
+
+Der erste CI-Lauf 41289583830 scheiterte an schon im Ausgangsstand vorhandenen
+Merge-Fehlern: zwei `DialogueHistory.unreadText`-Methoden und veraltete
+SpeakerVoice-Overload-Aufrufe. Für die aktive Completion-basierte Historie bleibt
+nur die Variante erhalten, die vollständig gehörte Texte abschneidet. Wrapper und
+zugehörige Profiltests nutzen die bereits vorhandene zurückhaltende Figurenlogik.
+Keine zusätzliche Satzzeichen-/Emotion-Multiplikation im lokalen Modus.
+
+Der aktuelle Android-CI-Status und die Prüfberichte stehen in PR #3. Die CI führt
+Debug/Release-APK, beide Bundles, beide Lint-/Unit-Test-Varianten und den
+Instrumentation-APK-Bau aus. Instrumentation wird dort ohne Gerät nicht ausgeführt.
+In dieser Arbeitsumgebung fehlen ein funktionsfähiges JDK/Android-SDK und ein
+angeschlossenes Telefon; kein lokaler Gradle-Build und keine Installation.
+`git diff --check` erfolgreich.
+
+**Noch nicht nachgewiesen:** echte Fish-/Google-Authentifizierung mit eigenen
+Zugängen, Provider-Quoten/Fehler, hörbarer deutscher Klang und Umlautaussprache,
+Latenz, verschlüsselte Zugangswiederherstellung am Gerät, Pause/Sprecherwechsel
+während realem HTTP/MediaPlayer sowie kleine Displays/TalkBack für den Dialog.
+Die vorhandenen lokalen TTS- und Kamera-Gerätelücken bleiben offen.
+
+Quellen:
+https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech
+https://docs.cloud.google.com/text-to-speech/docs/chirp3-hd
+https://docs.cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize
+
+
 ## 30.10.2026 · Umstellung auf sherpa-onnx / Piper Thorsten high
 
 Aktueller Stand nach der ausdrücklichen Wahl dieser Engine:
@@ -416,3 +487,4 @@ diesem Übergang kann ein Scrollfenster vollständig erneut gelesen werden.
 Sehr schnelles Scrollen bei voller Zwei-Ausgaben-Queue oder vor stabiler OCR
 kann Text verlieren. Fehlende/falsch erkannte Namensschilder bleiben mehrdeutig.
 API-23/26/30-Gerätematrix, Flugmodus und akustische Abnahme bleiben offen.
+

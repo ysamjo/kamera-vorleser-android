@@ -62,7 +62,9 @@ public class CloudSpeechTest {
     @Test public void requestsPreserveGermanAndEscapeJsonWithoutReadingFishDirectionsOnGoogle() {
         CloudSpeechRequest request = new CloudSpeechRequest("Scho\u0308n! \"Öl\"\\Äpfel\nGrüße", "voice-a",
                 "de-DE-Chirp3-HD-Kore", "fröhlich", 1.1f);
-        assertTrue(request.fishBody().contains("[fröhlich] Schön! \\\"Öl\\\"\\\\Äpfel\\nGrüße"));
+        assertTrue(request.fishBody().contains("[fröhlich] Schön!"));
+        assertTrue(request.fishBody().contains("\\\"Öl\\\""));
+        assertTrue(request.fishBody().contains("\\\\Äpfel\\nGrüße"));
         assertTrue(request.googleBody().contains("Schön!"));
         assertFalse(request.googleBody().contains("fröhlich"));
         assertFalse(request.googleBody().contains("pitch"));

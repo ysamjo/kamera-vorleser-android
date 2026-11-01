@@ -604,7 +604,9 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
             if (foreground && !paused && speechQueue.size() == 0) {
-                showStatus(failed ? "Sprachausgabe fehlgeschlagen · Zugang/Netz prüfen; neuer Versuch in 10 s" : "Suche Text …", !failed);
+                showStatus(failed ? (cloudSpeechEnabled
+                        ? "Sprachausgabe fehlgeschlagen · Zugang/Netz prüfen; neuer Versuch in 10 s"
+                        : "Sprachausgabe fehlgeschlagen – versuche erneut") : "Suche Text …", !failed);
             }
         });
     }
