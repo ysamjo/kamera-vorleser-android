@@ -1,5 +1,78 @@
 # Umsetzung und Validierung
 
+## 02.11.2026 · 15 feste Figurenrollen (1.5 / Code 6)
+
+- Fünf vorhandene Fish-Stimmen um zehn deutsche Fish-Official-Stimmen ergänzt;
+  mit Ego Lite im angemeldeten Web-Katalog recherchiert. Alle IDs, Rollen und
+  Beispiele stehen in [STIMMEN.md](STIMMEN.md). Keine neuen Originalstimmen-Klone
+  erstellt und keine neue Behauptung zur Häufigkeit der Figuren im Spiel.
+- Schlappchu/Pikachu getrennt; Bisasam, Glumanda und Schiggy erhalten eigene
+  Rollen. Weitere Gruppen für gemütliche Riesen, Technik, kleine Figuren,
+  elegante, massive und geisterhafte Figuren. Deutsche/englische Aliase und
+  zusammengesetzte Umlaute getestet. Lokale Pitch-/Rate-Profile unverändert.
+- Bekannte Rollen werden im vollständigen Standardpool anhand der ID zugeordnet,
+  unabhängig von Listenreihenfolge, vorherigem Belegen durch unbekannte Figuren
+  und alten gespeicherten automatischen Zuordnungen. Verwandte Figuren teilen
+  bewusst eine Grundstimme; Custom-Pools behalten die bisherige Verteilung.
+- Migration `pokopiaVoicesV2` erweitert nur fehlende oder alte Standardlisten.
+  Eigene/leere/ungültige Listen bleiben bestehen, auch ohne V1-Marker. Nur beim
+  Standard-Upgrade werden automatische Fish-Zuordnungen neu vergeben. Google-
+  Einstellungen, Zugangsdaten, lokaler Modus und Dialoghistorie bleiben erhalten.
+- Separates Read-only-Code-Review ohne konkrete Befunde. Regressionen für feste
+  Rollen trotz belegtem Pool, Neustart/Umsortieren, Custom-Pools, Aliasgrenzen und
+  Migration ergänzt; keine Anbieter-Requests aus automatisierten Tests.
+
+### Prüfungen dieses Stands
+
+Vollprüfung unter JDK 21: Debug-/Release-APKs, Debug-/Release-Bundles,
+Debug-/Release-Lint, je **72 Unit-Testmethoden** ohne Fehler/Skip und
+Instrumentation-APK erfolgreich. Beide Lint-Varianten: **0 Fehler, 57 Warnungen**;
+keine Baseline eingeführt. `git diff --check` erfolgreich.
+
+Die zehn neuen Stimmen lieferten im Fish-Web-Editor mit **Fish Audio S2.1 Pro**
+kurze deutsche Rollenbeispiele (Bisasam, Schlappchu, Glumanda, Mooslaxo, Rotom,
+Plinfa, Schiggy, Felori, Onix, Gengar); Player-/Download-Ergebnis im Browser sichtbar.
+Das ist ein Synthesenachweis, keine akustische Abnahme und kein Nachweis für
+`s2.1-pro-free` über die API. Keine Klone angelegt, kein Creator-Upgrade gebucht.
+
+Drei neue Migrationstests auf Pixel 10 Pro / Android 17 erfolgreich, 0 Skips.
+**Vorfall beim ersten Gerätelauf:** Der AGP-Aufruf `connectedDebugAndroidTest`
+hat die App deinstalliert/neu installiert. Die Android-Wiederherstellung brachte
+eine ältere Zweierliste zurück; `no_backup/cloud-tts.bin` und damit der Zugang
+waren danach nicht vorhanden. Vorher erfasste Dialoghistorie (SHA-256/21.141 Zeichen),
+Tempo, Engine und Effekt-/Cloud-Einstellung sind unverändert erhalten.
+Die vor dem Rollout gelesene Fünferliste wurde bei gestoppter App wiederhergestellt.
+Kein Erhalt des alten Zugangsspeichers behaupten.
+
+Korrektur: `scripts/test-device.sh` nutzt ausschließlich `adb install -r` für
+App/Test-APK und den direkten Instrumentation-Runner. AGENTS/README warnen vor
+`connectedDebugAndroidTest` auf persönlichen Geräten. Separates Review fand einen
+Bash-3.2-Randfall mit leeren Arrays; durch nichtleere Runner-Argumente korrigiert.
+Abschluss: eigener Fish-Schlüssel „Pokopia Pixel 10 Pro“ im angemeldeten Konto
+angelegt, per temporärem lokalen Hilfslauf ausschließlich über `CloudCredentials`
+AES-GCM/Android-Keystore gespeichert und zurückgelesen. Der Hilfslauf sendete keine
+Anbieter-Requests und ist nicht Bestandteil von Quellstand oder Test-APK. Ein
+früherer Google-Backup-Zugang konnte nicht rekonstruiert werden; auf dem Gerät ist
+nun Fish eingerichtet, Google muss bei Bedarf erneut eingetragen werden.
+
+Alle zehn zusätzlichen Voice-IDs anschließend separat mit dem neuen Zugang gegen
+`POST /v1/tts`, `model: s2.1-pro-free` geprüft: jeweils HTTP 200, `audio/mpeg`,
+30.092–35.107 Bytes für einen kurzen deutschen Satz. Diese bewusst ausgeführte
+Live-Prüfung ist vom schlüssellosen Unit-/CI-Testlauf getrennt. Keine Preis- oder
+künftige Verfügbarkeitsgarantie aus dem erfolgreichen Gratis-Modell-Aufruf ableiten.
+
+Neuen datenerhaltenden Ablauf unter macOS-Bash 3.2 auf demselben Pixel ausgeführt:
+**3 Tests erfolgreich, 0 Skips**. SHA-256 des verschlüsselten Zugangsspeichers vor/nach
+diesem Lauf identisch. Version 1.5 / Code 6 installiert. Die vollständige 15er-Liste
+und V2-Marker wurden abschließend bei gestoppter App gespeichert und von Disk
+zurückgelesen. Dialoghistorie bytegleich, Tempo 1,3 und bestehende Engine erhalten.
+Die Migration selbst wurde im isolierten Test und temporären Hilfslauf geprüft;
+kein erfolgreicher sichtbarer App-Neustart behauptet: Pixel bleibt gesperrt, eine
+Entsperrung wurde angefragt. Kamera-/Hörprüfung im laufenden Spiel steht aus.
+Akustische Rollenabnahme, echte Kamera-Namensschilder und API-23/26/30-Matrix
+bleiben gesonderte Gerätetests; ein Web-Editor-Erfolg bestätigt nicht den
+API-Free-Tarif oder dessen zukünftige Verfügbarkeit.
+
 ## 02.11.2026 · 5 Pokopia-Figurenstimmen & Slot-Zuordnung (1.4 / Code 5)
 
 Umsetzung im Branch `feature/pokopia-5-character-voices`:

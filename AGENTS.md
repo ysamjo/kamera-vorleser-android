@@ -31,7 +31,11 @@ und darf kein Backup auslösen. Zugangsdaten nur über CloudCredentials speicher
 
 `TextRules` enthält unverändert extrahierte Filter und Ähnlichkeitsschwellen.
 Instrumentation bauen: `./gradlew :app:assembleDebugAndroidTest`.
-Instrumentation ausführen: `ANDROID_SERIAL=<ADB-Gerät> ./gradlew :app:connectedDebugAndroidTest`.
+Instrumentation auf dem persönlichen Gerät ausführen:
+`ANDROID_SERIAL=<ADB-Gerät> ./scripts/test-device.sh [vollqualifizierte.Testklasse]`.
+Das Skript nutzt nur `adb install -r` und den direkten Runner, keine Deinstallation.
+`connectedDebugAndroidTest` darf auf Geräten mit Nutzerdaten nicht verwendet werden:
+AGP kann die App entfernen und damit Android-Keystore-/noBackup-Zugänge löschen.
 Gerät wach/entsperrt halten; übersprungene Tests ausdrücklich berichten.
 Das zusammengeführte App-Manifest benötigt für Cloud-TTS INTERNET.
 Keine Anbieter-Requests aus Tests ohne explizite Test-Zugangsdaten.

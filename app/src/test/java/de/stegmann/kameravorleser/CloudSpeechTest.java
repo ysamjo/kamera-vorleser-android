@@ -82,7 +82,7 @@ public class CloudSpeechTest {
 
     @Test public void voicePoolsRemainGermanAndNamesKeepStableDistinctAssignments() {
         assertEquals(4, CloudVoiceProfiles.parse(CloudVoiceProfiles.GOOGLE_DEFAULTS, false).size());
-        assertEquals(5, CloudVoiceProfiles.parse(CloudVoiceProfiles.FISH_DEFAULTS, true).size());
+        assertEquals(15, CloudVoiceProfiles.parse(CloudVoiceProfiles.FISH_DEFAULTS, true).size());
         VoiceAssignments assignments = new VoiceAssignments();
         java.util.List<String> pool = CloudVoiceProfiles.parse("fish-a,fish-b,fish-a", true);
         assertEquals("fish-a", assignments.choose("Pikachu", pool));
@@ -93,7 +93,7 @@ public class CloudSpeechTest {
     }
 
     @Test public void pokopiaCharacterVoicesMapToPreferredSlotsWithoutCollisions() {
-        java.util.List<String> fiveVoices = CloudVoiceProfiles.parse(CloudVoiceProfiles.FISH_DEFAULTS, true);
+        java.util.List<String> fiveVoices = CloudVoiceProfiles.parse(CloudVoiceProfiles.FISH_LEGACY_DEFAULTS, true);
         assertEquals(5, fiveVoices.size());
         VoiceAssignments assignments = new VoiceAssignments();
         assertEquals(fiveVoices.get(0), assignments.choose("Erzähler", fiveVoices, 0));
