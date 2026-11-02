@@ -28,6 +28,9 @@ final class CloudSpeechSettingsDialog {
         EditText fish = field(form, "Fish API-Schlüssel (leer = behalten)", "", true);
         EditText voices = field(form, "Fish Voice-IDs, mit Komma getrennt",
                 prefs.getString("cloudFishVoices", CloudVoiceProfiles.FISH_DEFAULTS), false);
+        TextView roles = new TextView(activity);
+        roles.setText("Der Pokopia-Standard enthält 15 Stimmen: unter anderem eigene Rollen für Schlappchu, Pikachu, Evoli, Bisasam, Glumanda, Schiggy, den Professor, gemütliche Riesen, Geister und technische Pokémon. Verwandte Figuren teilen sich eine Rolle. Eine eigene Voice-Liste ersetzt diese Vorauswahl.");
+        form.addView(roles);
         EditText google = field(form, "Google Cloud API-Key oder Bearer-Token (Backup)", "", true);
         EditText googleVoices = field(form, "Deutsche Chirp-Backup-Stimmen, mit Komma getrennt",
                 prefs.getString("cloudGoogleVoices", CloudVoiceProfiles.GOOGLE_DEFAULTS), false);

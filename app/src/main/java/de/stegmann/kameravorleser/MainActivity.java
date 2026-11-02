@@ -261,11 +261,7 @@ public class MainActivity extends AppCompatActivity {
             prefs.edit().putBoolean("cloudSpeechConfiguredV1", true)
                     .putBoolean("cloudSpeechEnabled", true).putBoolean("characterEffects", true).apply();
         }
-        if (!prefs.getBoolean("pokopiaVoicesV1", false)) {
-            prefs.edit().putString("cloudFishVoices", CloudVoiceProfiles.FISH_DEFAULTS)
-                    .remove("cloudFishAssignments")
-                    .putBoolean("pokopiaVoicesV1", true).apply();
-        }
+        CloudVoiceSettings.migrate(prefs);
         restoreCloudAssignments(prefs, "cloudFishAssignments", cloudFishAssignments);
         restoreCloudAssignments(prefs, "cloudGoogleAssignments", cloudGoogleAssignments);
         soundsEnabled = prefs.getBoolean(KEY_SOUNDS_ENABLED, true);
@@ -883,13 +879,16 @@ public class MainActivity extends AppCompatActivity {
         try {
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
             VoiceProfile profile = voiceProfileFor(normalize(speaker));
-            String fishVoice = cloudFishAssignments.choose(speaker, CloudVoiceProfiles.parse(
-                    prefs.getString("cloudFishVoices", CloudVoiceProfiles.FISH_DEFAULTS), true), profile.voiceSlot);
+            List<String> fishVoices = CloudVoiceProfiles.parse(
+                    prefs.getString("cloudFishVoices", CloudVoiceProfiles.FISH_DEFAULTS), true);
+            String fishVoice = CloudVoiceRouting.choose(speaker, fishVoices,
+                    cloudFishAssignments, profile.voiceSlot);
             String googleVoice = cloudGoogleAssignments.choose(speaker, CloudVoiceProfiles.parse(
                     prefs.getString("cloudGoogleVoices", CloudVoiceProfiles.GOOGLE_DEFAULTS), false), profile.voiceSlot);
             CloudSpeechRequest request = new CloudSpeechRequest(text, fishVoice == null ? "" : fishVoice,
                     googleVoice == null ? "de-DE-Chirp3-HD-Charon" : googleVoice,
-                    characterEffects ? CloudVoiceProfiles.direction(profile.pitch, profile.rateFactor) : "",
+                    characterEffects ? CloudVoiceRouting.direction(speaker, fishVoices,
+                            profile.pitch, profile.rateFactor) : "",
                     speechRate);
             boolean accepted = speechQueue.submit(historyKey, id ->
                     cloudPlayer.speak(id, request, fishKey, googleKey, volume));

@@ -9,8 +9,10 @@
 
 **Nutzerauftrag 01.11./02.11.2026:** Cloud-TTS mit Fish Audio Drama 3 primär (mit
 automatischem s2.1-pro-free-Fallback bei HTTP 402) und Google Chirp 3 HD als Backup.
-Auswahl und Konfiguration der 5 Kern-Figurenstimmen für Pokopia (Erzähler, Pikachu/Schlappchu,
-Evoli, Professor Tangoloss, Abenteurer/Rivale) mit automatischer Slot-Zuordnung. Dies ersetzt
+Auswahl und Konfiguration von zunächst 5, ab Version 1.5 nun 15 festen Figurenrollen
+für Pokopia, einschließlich getrennter Stimmen für Schlappchu/Pikachu sowie Bisasam,
+Glumanda und Schiggy. Rollen bleiben unabhängig von der Erkennungsreihenfolge; eigene
+Voice-Listen bleiben erhalten. Der Katalog steht in STIMMEN.md. Dies ersetzt
 für die Standard-Sprachausgabe das frühere Offline-only-Ziel; OCR bleibt offline, Bilder
 werden nicht übertragen. Lokale Sprachausgabe bleibt ausdrücklich wählbar. Umsetzung und
 offene Hör-/Gerätetests stehen im neuesten Abschnitt von VALIDIERUNG.md.

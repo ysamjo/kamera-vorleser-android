@@ -22,12 +22,24 @@ Einrichtung unter **STIMME → Fish Audio + Google-Backup einrichten**:
 4. Speichern und Probehören. Der Status nennt bei Wiedergabe Fish Audio oder
    Google Chirp / Backup. Das gespeicherte Dialoggedächtnis bleibt erhalten.
 
-Die App vergibt pro Pokémon eine gespeicherte Grundstimme; mit mehreren Fish-IDs
-werden zunächst unterschiedliche Stimmen verteilt. Figureneffekte sind beim
-Wechsel auf diese Version eingeschaltet und senden an Fish kurze deutsche
+Ab Version 1.5 enthält der Standard **15 feste Rollen mit 15 Grundstimmen**.
+Schlappchu, Pikachu, Evoli, Bisasam, Glumanda, Schiggy und der Professor haben
+getrennte Stimmen; weitere Pokémon teilen sich passende Rollen für Kämpfer,
+gemütliche Riesen, Technik, kleine Figuren, elegante, massive oder geisterhafte
+Figuren. Alle IDs und Zuordnungen stehen in [STIMMEN.md](docs/STIMMEN.md).
+Bekannte Figuren erhalten ihre Rolle unabhängig von der Erkennungsreihenfolge.
+Deutsche und englische Namen verwenden dieselbe Rolle.
+
+Die bisherige Standardliste mit fünf Stimmen wird einmalig automatisch erweitert.
+Eigene Listen, ein absichtlich leerer Fish-Pool, das Dialoggedächtnis, Zugangsdaten
+und die lokale Sprachengine bleiben erhalten. In eigenen Pools werden verfügbare
+Stimmen wie bisher zunächst getrennt vergeben und anschließend möglichst gleichmäßig
+geteilt. Unbekannte Namen behalten ihre gespeicherte Stimme.
+
+Bei aktivierten Figureneffekten erhalten kuratierte Fish-Stimmen kurze deutsche
 Regieanweisungen. Google erhält ausschließlich den Dialogtext, keine Fish-Tags.
-Tempo wird von beiden APIs angefragt. Bei nur einer Fish-ID bleibt die Grundstimme
-gleich; Emotionen erzeugen keine Garantie für hörbar verschiedene Figuren.
+Tempo wird von beiden APIs angefragt. Verwandte Figuren teilen sich bewusst eine
+Grundstimme; eine eigene natürliche Stimme für jedes Pokémon ist nicht zugesichert.
 
 Bei Fish-HTTP-Fehlern, Zeitüberschreitungen oder ungültiger Syntheseantwort folgt
 höchstens ein Google-Versuch. Fehlt Fish-Schlüssel oder Voice-ID, kann nur ein
@@ -118,7 +130,11 @@ Die App besitzt keine Internetberechtigung; das gebündelte OCR-Modell wurde auf
 Pixel 10 Pro (API 37) mit synthetischem Text erfolgreich ausgeführt.
 Gerätetests bauen: `./gradlew :app:assembleDebugAndroidTest`.
 Auf einem ausgewählten, entsperrten Testgerät ausführen:
-`ANDROID_SERIAL=<ADB-Gerät> ./gradlew :app:connectedDebugAndroidTest`.
+`ANDROID_SERIAL=<ADB-Gerät> ./scripts/test-device.sh`.
+Eine Testklasse lässt sich als Argument angeben. Das Skript aktualisiert App und
+Test-APK mit `adb install -r` und startet den Runner direkt. Auf persönlichen
+Geräten kein `connectedDebugAndroidTest` verwenden: dessen Installationsablauf
+kann die App samt geschütztem Zugangsspeicher entfernen.
 Lifecycle-Tests werden bei gesperrtem/schlafendem Gerät ausdrücklich übersprungen.
 Ein OCR-Smoke-Test ersetzt keinen realen Pokopia-Kameratest oder Hörtest.
 
