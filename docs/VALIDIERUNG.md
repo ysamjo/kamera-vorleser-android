@@ -1,5 +1,31 @@
 # Umsetzung und Validierung
 
+## 02.11.2026 · 5 Pokopia-Figurenstimmen & Slot-Zuordnung (1.4 / Code 5)
+
+Umsetzung im Branch `feature/pokopia-5-character-voices`:
+
+- Analyse der tatsächlichen Pokopia-Spieldialoge aus der Historie ergab fünf zentrale Figurenrollen:
+  1. **Erzähler (Narrator / System / Items):** `c079932b47564fcfad0a9f6874a49df7` ("German Father" – ruhige, tiefe, sonore Erzählerstimme).
+  2. **Pikachu / Schlappchu (Protagonist / Begleiterin):** `77e3908a672a4b43b30786e52655d1bc` ("Paluten 0.1" – jung, dynamisch, expressiv).
+  3. **Evoli / Weibliche Gefährten:** `88b18e0d81474a0ca08e2ea6f9df5ff4` ("Christa deutsch" – klar, freundlich, natürlich).
+  4. **Professor Tangoloss (Weiser Ältester / Mentor):** `3130ae7c3d844e2998978289c7c11c98` ("GERMAN WISDOM. M" – tief, bedacht, würdevoll).
+  5. **Abenteurer / Kämpfer (Scherox, Machollo, Bisasam):** `9b1041732d1b4c2686d695c8bba3b149` ("EN_A1_P0_P0A" – kraftvoll, mutig, engagiert).
+- Alle 5 Modelle wurden live mit dem Fish-Audio-Modell `s2.1-pro-free` verifiziert; alle liefern fehlerfrei saubere 44.1-kHz-MP3-Audiodaten.
+- Standard-Konfiguration:
+  - `CloudVoiceProfiles.FISH_DEFAULTS` enthält diese 5 Voice-IDs ab Werk kommagetrennt.
+  - Einmalige automatische Migration (`pokopiaVoicesV1`) initialisiert bestehende und neue Installationen, setzt veraltete 2-Stimmen-Zuordnungen zurück und belässt spätere manuelle Anpassungen im STIMME-Dialog unangetastet.
+- Slot-basierte Rollenverteilung in `VoiceAssignments`:
+  - `choose(speaker, available, preferredSlot)` weist einer Figur bevorzugt die passende Rolle (Slot 0..4) zu, sofern diese noch frei ist, und weicht bei Belegung kollisionsfrei auf die seltenste Stimme im Pool aus.
+  - Figurenbeziehungen in `voiceProfileFor`:
+    - Slot 0: Erzähler / System
+    - Slot 1: Pikachu, Schlappchu, Pichu
+    - Slot 2: Evoli, Felori, Plinfa, Schiggy
+    - Slot 3: Professor Tangoloss, Tangrowth
+    - Slot 4: Abenteurer, Scherox, Machollo, Bisasam, Glumanda, Tinkmaster
+- Prüfung:
+  - Unit-Test `pokopiaCharacterVoicesMapToPreferredSlotsWithoutCollisions` testet stabile Slot-Zuordnungen, Wiedererkennung und kollisionsfreies Ausweichen bei Zusatzfiguren.
+  - Alle Tests und Lint-Prüfungen (`./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest`) erfolgreich.
+
 ## 01.11.2026 · Fish Audio primär, Google Chirp als Backup (1.4 / Code 5)
 
 Umsetzung im Branch `feat/fish-audio-chirp-backup`, PR:

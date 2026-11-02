@@ -7,11 +7,13 @@
 
 ## Aktueller Umsetzungsstand
 
-**Nutzerauftrag 01.11.2026:** Cloud-TTS mit Fish Audio Drama 3 primär und Google
-Chirp 3 HD als Backup. Dies ersetzt für die neue Standard-Sprachausgabe das frühere
-Offline-only-Ziel; OCR bleibt offline, Bilder werden nicht übertragen. Lokale
-Sprachausgabe bleibt ausdrücklich wählbar. Umsetzung und offene Hör-/Gerätetests
-stehen im neuesten Abschnitt von VALIDIERUNG.md.
+**Nutzerauftrag 01.11./02.11.2026:** Cloud-TTS mit Fish Audio Drama 3 primär (mit
+automatischem s2.1-pro-free-Fallback bei HTTP 402) und Google Chirp 3 HD als Backup.
+Auswahl und Konfiguration der 5 Kern-Figurenstimmen für Pokopia (Erzähler, Pikachu/Schlappchu,
+Evoli, Professor Tangoloss, Abenteurer/Rivale) mit automatischer Slot-Zuordnung. Dies ersetzt
+für die Standard-Sprachausgabe das frühere Offline-only-Ziel; OCR bleibt offline, Bilder
+werden nicht übertragen. Lokale Sprachausgabe bleibt ausdrücklich wählbar. Umsetzung und
+offene Hör-/Gerätetests stehen im neuesten Abschnitt von VALIDIERUNG.md.
 
 KAV-01–04 technisch umgesetzt; Geräte-Matrix und reale Fehler-/Recovery-Szenarien
 noch offen. KAV-06 implementiert und Queue-Logik getestet. KAV-10/11 sowie KAV-13
