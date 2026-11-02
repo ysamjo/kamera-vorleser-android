@@ -66,12 +66,26 @@ Neuen datenerhaltenden Ablauf unter macOS-Bash 3.2 auf demselben Pixel ausgefüh
 diesem Lauf identisch. Version 1.5 / Code 6 installiert. Die vollständige 15er-Liste
 und V2-Marker wurden abschließend bei gestoppter App gespeichert und von Disk
 zurückgelesen. Dialoghistorie bytegleich, Tempo 1,3 und bestehende Engine erhalten.
-Die Migration selbst wurde im isolierten Test und temporären Hilfslauf geprüft;
-kein erfolgreicher sichtbarer App-Neustart behauptet: Pixel bleibt gesperrt, eine
-Entsperrung wurde angefragt. Kamera-/Hörprüfung im laufenden Spiel steht aus.
-Akustische Rollenabnahme, echte Kamera-Namensschilder und API-23/26/30-Matrix
-bleiben gesonderte Gerätetests; ein Web-Editor-Erfolg bestätigt nicht den
-API-Free-Tarif oder dessen zukünftige Verfügbarkeit.
+Die Migration selbst wurde im isolierten Test und temporären Hilfslauf geprüft.
+
+Nach Nutzer-Entsperrung am 02.11.2026: sichtbarer Kaltstart auf Pixel 10 Pro
+bestätigt (`LaunchState: COLD`, MainActivity im Vordergrund, Sperrbildschirm aus).
+Hauptansicht zeigt „Suche Text …“, Sprachausgabe-Menü „Figureneffekte: EIN“.
+Die echte App-Hörprobe „Umlaute und Sprecherwechsel“ wurde über die Oberfläche
+mit Pikachu und anschließend Bisasam ausgelöst. Sichtbare Statusfolge:
+„Erzeuge Sprache …“ → „Lese vor · Fish Audio“ → „Probehören beendet“.
+Der zweite Teil wird erst nach erfolgreichem Wiedergabeabschluss des ersten
+aktiviert. Beide Rollen sind gespeichert: Pikachu mit `77e3908a672a4b43b30786e52655d1bc`,
+Bisasam mit `b5b77e8422b948efbf13be1e567a406c`. Weiterhin 15 Stimmen; SHA-256 von
+Dialoghistorie und verschlüsseltem Zugangsspeicher vor/nach der Hörprobe identisch.
+Keine Neuinstallation, Deinstallation oder Änderung von Nutzereinstellungen.
+
+Dies bestätigt Synthese, Player-Abschluss und den technischen Sprecherwechsel
+auf dem entsperrten Pixel. Subjektiver Klang und Unterscheidbarkeit wurden nicht
+vom Nutzer bestätigt; der UI-Status nennt nur Fish Audio, nicht das benutzte
+Fish-Modell. Echte Kamera-Namensschilder, Vorlesen im laufenden Spiel und die
+API-23/26/30-Matrix bleiben gesonderte Gerätetests. Ein Web-Editor-Erfolg bestätigt
+nicht den API-Free-Tarif oder dessen zukünftige Verfügbarkeit.
 
 ## 02.11.2026 · 5 Pokopia-Figurenstimmen & Slot-Zuordnung (1.4 / Code 5)
 
