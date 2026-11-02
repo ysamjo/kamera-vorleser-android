@@ -82,6 +82,7 @@ public class CloudSpeechTest {
 
     @Test public void voicePoolsRemainGermanAndNamesKeepStableDistinctAssignments() {
         assertEquals(4, CloudVoiceProfiles.parse(CloudVoiceProfiles.GOOGLE_DEFAULTS, false).size());
+        assertEquals(5, CloudVoiceProfiles.parse(CloudVoiceProfiles.FISH_DEFAULTS, true).size());
         VoiceAssignments assignments = new VoiceAssignments();
         java.util.List<String> pool = CloudVoiceProfiles.parse("fish-a,fish-b,fish-a", true);
         assertEquals("fish-a", assignments.choose("Pikachu", pool));
@@ -89,5 +90,25 @@ public class CloudSpeechTest {
         assertEquals("fish-a", assignments.choose("PIKACHU", pool));
         try { CloudVoiceProfiles.parse("en-US-Chirp3-HD-Kore", false); fail("Deutsch erzwingen"); }
         catch (IllegalArgumentException expected) { /* Kein falscher Sprachraum. */ }
+    }
+
+    @Test public void pokopiaCharacterVoicesMapToPreferredSlotsWithoutCollisions() {
+        java.util.List<String> fiveVoices = CloudVoiceProfiles.parse(CloudVoiceProfiles.FISH_DEFAULTS, true);
+        assertEquals(5, fiveVoices.size());
+        VoiceAssignments assignments = new VoiceAssignments();
+        assertEquals(fiveVoices.get(0), assignments.choose("Erzähler", fiveVoices, 0));
+        assertEquals(fiveVoices.get(1), assignments.choose("Schlappchu", fiveVoices, 1));
+        assertEquals(fiveVoices.get(2), assignments.choose("Evoli", fiveVoices, 2));
+        assertEquals(fiveVoices.get(3), assignments.choose("Professor Tangoloss", fiveVoices, 3));
+        assertEquals(fiveVoices.get(4), assignments.choose("Scherox", fiveVoices, 4));
+
+        // Gleiche Figur behält ihre Stimme stabil
+        assertEquals(fiveVoices.get(1), assignments.choose("SCHLAPPCHU", fiveVoices, 1));
+        assertEquals(fiveVoices.get(0), assignments.choose("erzähler", fiveVoices, 0));
+
+        // Weitere Figur mit belegtem Wunsch-Slot weicht auf noch freie oder seltenste Stimme aus
+        String extra = assignments.choose("Machollo", fiveVoices, 4);
+        assertNotNull(extra);
+        assertTrue(fiveVoices.contains(extra));
     }
 }

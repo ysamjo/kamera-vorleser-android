@@ -261,6 +261,11 @@ public class MainActivity extends AppCompatActivity {
             prefs.edit().putBoolean("cloudSpeechConfiguredV1", true)
                     .putBoolean("cloudSpeechEnabled", true).putBoolean("characterEffects", true).apply();
         }
+        if (!prefs.getBoolean("pokopiaVoicesV1", false)) {
+            prefs.edit().putString("cloudFishVoices", CloudVoiceProfiles.FISH_DEFAULTS)
+                    .remove("cloudFishAssignments")
+                    .putBoolean("pokopiaVoicesV1", true).apply();
+        }
         restoreCloudAssignments(prefs, "cloudFishAssignments", cloudFishAssignments);
         restoreCloudAssignments(prefs, "cloudGoogleAssignments", cloudGoogleAssignments);
         soundsEnabled = prefs.getBoolean(KEY_SOUNDS_ENABLED, true);
@@ -361,7 +366,7 @@ public class MainActivity extends AppCompatActivity {
                 String[] keys = cloudCredentials.read();
                 fishKey = keys[0]; googleKey = keys[1];
                 boolean fishConfigured = !fishKey.isEmpty() && !CloudVoiceProfiles.parse(
-                        cloudPrefs.getString("cloudFishVoices", ""), true).isEmpty();
+                        cloudPrefs.getString("cloudFishVoices", CloudVoiceProfiles.FISH_DEFAULTS), true).isEmpty();
                 ttsReady = fishConfigured || !googleKey.isEmpty();
                 String cloudStatus = !ttsReady ? "Fish Audio / Google unter STIMME einrichten"
                         : !fishConfigured ? "Nur Google-Backup konfiguriert · Fish Audio fehlt"
@@ -877,11 +882,11 @@ public class MainActivity extends AppCompatActivity {
     private boolean submitCloudSpeech(String text, String speaker, String historyKey) {
         try {
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            String fishVoice = cloudFishAssignments.choose(speaker, CloudVoiceProfiles.parse(
-                    prefs.getString("cloudFishVoices", ""), true));
-            String googleVoice = cloudGoogleAssignments.choose(speaker, CloudVoiceProfiles.parse(
-                    prefs.getString("cloudGoogleVoices", CloudVoiceProfiles.GOOGLE_DEFAULTS), false));
             VoiceProfile profile = voiceProfileFor(normalize(speaker));
+            String fishVoice = cloudFishAssignments.choose(speaker, CloudVoiceProfiles.parse(
+                    prefs.getString("cloudFishVoices", CloudVoiceProfiles.FISH_DEFAULTS), true), profile.voiceSlot);
+            String googleVoice = cloudGoogleAssignments.choose(speaker, CloudVoiceProfiles.parse(
+                    prefs.getString("cloudGoogleVoices", CloudVoiceProfiles.GOOGLE_DEFAULTS), false), profile.voiceSlot);
             CloudSpeechRequest request = new CloudSpeechRequest(text, fishVoice == null ? "" : fishVoice,
                     googleVoice == null ? "de-DE-Chirp3-HD-Charon" : googleVoice,
                     characterEffects ? CloudVoiceProfiles.direction(profile.pitch, profile.rateFactor) : "",
@@ -1228,37 +1233,37 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (matchesAny(speaker, "professor", "tangoloss", "tangrowth")) {
-            return new VoiceProfile(0, 0.80f, 0.90f); // warm, erfahren
+            return new VoiceProfile(3, 0.80f, 0.90f); // warm, erfahren
         }
-        if (matchesAny(speaker, "peakychu")) {
-            return new VoiceProfile(1, 1.12f, 0.90f); // klein, sanft und etwas müde
+        if (matchesAny(speaker, "schlappchu", "peakychu")) {
+            return new VoiceProfile(1, 1.18f, 1.05f); // lebhafte Partnerin
         }
         if (matchesAny(speaker, "chef dente")) {
             return new VoiceProfile(0, 0.90f, 0.98f); // herzlich und genussfreudig
         }
         if (matchesAny(speaker, "tinkmaster")) {
-            return new VoiceProfile(2, 0.98f, 1.06f); // selbstbewusst und tatkräftig
+            return new VoiceProfile(4, 0.98f, 1.06f); // selbstbewusst und tatkräftig
         }
         if (matchesAny(speaker, "dj rotom")) {
-            return new VoiceProfile(3, 1.02f, 1.13f); // besonders lebhaft-elektronisch
+            return new VoiceProfile(4, 1.02f, 1.13f); // besonders lebhaft-elektronisch
         }
         if (matchesAny(speaker, "schiggy", "squirtle")) {
             return new VoiceProfile(2, 1.16f, 1.06f); // fröhlich und aufgeweckt
         }
         if (matchesAny(speaker, "bisasam", "bulbasaur")) {
-            return new VoiceProfile(1, 1.07f, 0.99f); // jung, ruhig und freundlich
+            return new VoiceProfile(4, 1.07f, 0.99f); // jung, ruhig und freundlich
         }
         if (matchesAny(speaker, "glumanda", "charmander")) {
-            return new VoiceProfile(3, 1.12f, 1.07f); // warm und energiegeladen
+            return new VoiceProfile(4, 1.12f, 1.07f); // warm und energiegeladen
         }
         if (matchesAny(speaker, "plinfa", "piplup")) {
             return new VoiceProfile(2, 1.21f, 1.03f); // klein und stolz
         }
         if (matchesAny(speaker, "felori", "sprigatito")) {
-            return new VoiceProfile(1, 1.14f, 0.97f); // weich und gelassen
+            return new VoiceProfile(2, 1.14f, 0.97f); // weich und gelassen
         }
         if (matchesAny(speaker, "pikachu", "pichu")) {
-            return new VoiceProfile(3, 1.28f, 1.12f); // sehr hell, energetisch und ikonisch
+            return new VoiceProfile(1, 1.28f, 1.12f); // sehr hell, energetisch und ikonisch
         }
         if (matchesAny(speaker, "mooslaxo", "mosslax")) {
             return new VoiceProfile(0, 0.68f, 0.76f); // besonders schläfrig, träge und weich
@@ -1287,9 +1292,9 @@ public class MainActivity extends AppCompatActivity {
                 "genesect", "golbit", "golgantes")) {
             return new VoiceProfile(3, 0.88f, 1.12f); // technisch - robotischer und präziser
         }
-        if (matchesAny(speaker, "sichlor", "scyther", "praktibalk", "timburr", "rotomurf",
+        if (matchesAny(speaker, "scherox", "scizor", "sichlor", "scyther", "praktibalk", "timburr", "rotomurf",
                 "drilbur", "machollo", "maschock", "machomei", "panzaeron")) {
-            return new VoiceProfile(1, 0.84f, 0.98f); // rau und tatkräftig
+            return new VoiceProfile(4, 0.84f, 0.98f); // rau und tatkräftig
         }
         if (matchesAny(speaker, "mauzi", "meowth", "karpador", "magikarp", "unratütox",
                 "trubbish", "schlaraffel", "greedent", "kleptifux")) {

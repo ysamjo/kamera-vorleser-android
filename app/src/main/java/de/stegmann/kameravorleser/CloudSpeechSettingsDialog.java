@@ -26,7 +26,8 @@ final class CloudSpeechSettingsDialog {
         enabled.setChecked(prefs.getBoolean("cloudSpeechEnabled", true));
         form.addView(enabled);
         EditText fish = field(form, "Fish API-Schlüssel (leer = behalten)", "", true);
-        EditText voices = field(form, "Fish Voice-IDs, mit Komma getrennt", prefs.getString("cloudFishVoices", ""), false);
+        EditText voices = field(form, "Fish Voice-IDs, mit Komma getrennt",
+                prefs.getString("cloudFishVoices", CloudVoiceProfiles.FISH_DEFAULTS), false);
         EditText google = field(form, "Google Cloud API-Key oder Bearer-Token (Backup)", "", true);
         EditText googleVoices = field(form, "Deutsche Chirp-Backup-Stimmen, mit Komma getrennt",
                 prefs.getString("cloudGoogleVoices", CloudVoiceProfiles.GOOGLE_DEFAULTS), false);

@@ -5,6 +5,7 @@ import java.util.List;
 
 final class CloudVoiceProfiles {
     static final String GOOGLE_DEFAULTS = "de-DE-Chirp3-HD-Charon,de-DE-Chirp3-HD-Kore,de-DE-Chirp3-HD-Puck,de-DE-Chirp3-HD-Aoede";
+    static final String FISH_DEFAULTS = "c079932b47564fcfad0a9f6874a49df7,77e3908a672a4b43b30786e52655d1bc,88b18e0d81474a0ca08e2ea6f9df5ff4,3130ae7c3d844e2998978289c7c11c98,9b1041732d1b4c2686d695c8bba3b149";
     static List<String> parse(String raw, boolean fish) {
         List<String> result = new ArrayList<>();
         if (raw.trim().isEmpty()) return result;

@@ -12,13 +12,25 @@ final class VoiceAssignments {
     Map<String, String> snapshot() { return new HashMap<>(assigned); }
 
     String choose(String speaker, List<String> available) {
+        return choose(speaker, available, -1);
+    }
+
+    String choose(String speaker, List<String> available, int preferredSlot) {
         if (available.isEmpty()) return null;
         String key = TextRules.normalize(speaker);
         String saved = assigned.get(key);
         if (available.contains(saved)) return saved;
+        if (preferredSlot >= 0 && preferredSlot < available.size()) {
+            String preferredVoice = available.get(preferredSlot);
+            if (!assigned.containsValue(preferredVoice)) {
+                assigned.put(key, preferredVoice);
+                return preferredVoice;
+            }
+        }
         // Beste verfügbare Stimme zuerst; keine Grundstimme doppelt vergeben,
         // solange noch eine unbenutzte vorhanden ist. Danach die seltenste wählen.
-        String best = available.get(0);
+        String best = (preferredSlot >= 0 && preferredSlot < available.size())
+                ? available.get(preferredSlot) : available.get(0);
         int least = Integer.MAX_VALUE;
         for (String voice : available) {
             int uses = 0;
