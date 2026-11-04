@@ -43,7 +43,7 @@ final class BubbleAppearance {
     }
 
     static boolean isCharacterLabel(String name) {
-        if (name == null || SpeakerLabels.hasDialogueWords(name)) return false;
+        if (name == null || TextRules.isActionLabel(name) || SpeakerLabels.hasDialogueWords(name)) return false;
         String key = TextRules.normalize(name);
         return !key.isEmpty() && !key.matches(
                 "(lagerbestand|inventar|beschreibung|informationen|aufgaben|aufgabe|ziel|ziele|material|materialien|herstellen|rezept|rezepte|karte|hilfe|einstellungen|status|gegenstände|sammlung|menü)");

@@ -57,6 +57,9 @@ public class BubbleAppearanceTest {
     @Test public void descriptionHeadingIsNotAnAnimalName() {
         assertFalse(BubbleAppearance.isCharacterLabel("Lagerbestand"));
         assertFalse(BubbleAppearance.isCharacterLabel("Inventar"));
+        for (String action : new String[]{"Weiter", "Zurück", "A Weiter", "Ja", "Nein"}) {
+            assertFalse(action, BubbleAppearance.isCharacterLabel(action));
+        }
         assertFalse(BubbleAppearance.isCharacterLabel("Hier findest du"));
         assertFalse(BubbleAppearance.isCharacterLabel(null));
         assertTrue(BubbleAppearance.isCharacterLabel("Professor Tangoloss"));
