@@ -14,7 +14,18 @@ zugelassen, der Mindestkontrast angepasst und die Abtastung kurzer Zeilen auf de
 Dialog-Innenbereich begrenzt. Zwölf echte Farbstichproben mit manuellen Textgrenzen
 sichern positive und negative Fälle, zusätzlich mit 80-%-RGB-Skalierung.
 
-Elf fokussierte Unit-Tests erfolgreich. Vollprüfung und Rollout werden ergänzt.
+Prüfung des Code-Stands `c0002f1` auf dem Mac/JDK 21: vollständige Debug-/Release-
+APKs und Bundles, Lint (je 0 Fehler, 59 Warnungen), je **95 Unit-Testmethoden** ohne
+Fehler/Skips und Instrumentation-APK erfolgreich. Zwölf fokussierte Tests auch
+unter Linux/JDK 21 und im separaten Read-only-Review bestanden; keine neuen Blocker.
+Keine Lint-Baseline/Unterdrückung ergänzt.
+
+Datenerhaltender Rollout auf das bestätigte Pixel 10 Pro
+(`192.168.178.117:5555`, Modell `blazer`) über `scripts/test-device.sh` ausschließlich
+mit `adb install -r`: **1 OCR-Gerätetest erfolgreich, 0 Skips**. Version
+**1.6.1 / Code 8** danach bestätigt. Preferences und verschlüsseltes
+`no_backup/cloud-tts.bin` haben vor/nach Installation und Test identische SHA-256-
+Werte. Keine Deinstallation und keine Anbieter-Requests aus Tests.
 Die vorherige Aussage „reale Spielaufnahmen fehlen“ gilt für den Stand 1.6;
 Kamera-/Hörabnahme im laufenden Spiel bleibt auch nach dieser Sichtprüfung offen.
 
