@@ -1,5 +1,22 @@
 # Pokopia Story-Vorleser
 
+## Sprechblasen ab Version 1.6
+
+Die Kamera liest gezielt die unteren blauen Dialogkästen und grauen Tierdialoge
+mit Namensschild. Unterer Bildschirmtext allein reicht nicht mehr zur Freigabe:
+Farbfläche, Lage und obere Abgrenzung müssen passen. Bildschirm möglichst gerade
+und vollständig in die Kameravorschau nehmen. Die Prüfung ist eine Heuristik;
+eine Abnahme mit beiden echten Blasenformen steht noch aus.
+
+Zwei gleiche OCR-Befunde bestätigen den Text. Fertige Sätze können nach 120 ms
+Ruhe starten, Text ohne Satzende nach 420 ms. Cloud-Synthese benötigt zusätzlich
+Netzwerk- und Anbieterzeit; eine gemessene Gesamtlatenz liegt noch nicht vor.
+
+Vollständig vorgelesene Dialogfenster bleiben pro Sprecher auch nach Neustart
+gespeichert. Bei überlappenden Fenstern wird nur der neue Rest gelesen. **Neu lesen**
+gibt den sichtbaren Text einmal vollständig frei. Abgebrochene Ausgaben gelten
+weiterhin als ungelesen.
+
 ## Sprachausgabe ab Version 1.4: Fish Audio mit Google-Backup
 
 **Fish Audio Drama 3 ist primär, Google Cloud Chirp 3 HD ist Backup.**
