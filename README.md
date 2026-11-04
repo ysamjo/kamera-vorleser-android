@@ -5,8 +5,10 @@
 Die Kamera liest gezielt die unteren blauen Dialogkästen und grauen Tierdialoge
 mit Namensschild. Unterer Bildschirmtext allein reicht nicht mehr zur Freigabe:
 Farbfläche, Lage und obere Abgrenzung müssen passen. Bildschirm möglichst gerade
-und vollständig in die Kameravorschau nehmen. Die Prüfung ist eine Heuristik;
-eine Abnahme mit beiden echten Blasenformen steht noch aus.
+und vollständig in die Kameravorschau nehmen. Die Prüfung ist eine Heuristik. Beide Boxformen wurden in deutschen
+YouTube-Spielaufnahmen visuell geprüft und ab Version 1.6.1 mit realen
+Farbstichproben getestet; die Kameraabnahme im Spiel steht noch aus.
+Quellen und Grenzen: [Dialogbox-Referenzen](docs/DIALOGBOX_REFERENZEN.md).
 
 Zwei gleiche OCR-Befunde bestätigen den Text. Fertige Sätze können nach 120 ms
 Ruhe starten, Text ohne Satzende nach 420 ms. Cloud-Synthese benötigt zusätzlich

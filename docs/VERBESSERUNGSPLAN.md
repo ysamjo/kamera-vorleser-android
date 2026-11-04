@@ -10,8 +10,9 @@
 **Nutzerauftrag 04.11.2026:** Untere blaue/graue Sprechblasen gezielt filtern,
 Wiederholungen über gespeicherte Textfenster vermeiden, Erkennungsabstand verkürzen
 und App-Icon verbessern. Version 1.6 enthält konservative Farb-/Geometrieprüfungen,
-getestete Ruhezeiten und ergänzte Überlappungsregeln. Reale Spielkonturen und
-hörbare Startlatenz sind noch am Gerät abzunehmen; Details in VALIDIERUNG.md.
+getestete Ruhezeiten und ergänzte Überlappungsregeln. Die beiden tatsächlichen Boxformen wurden anschließend in YouTube-Spielaufnahmen
+geprüft und zwei Fehlablehnungen in Version 1.6.1 korrigiert. Kameraabnahme und
+hörbare Startlatenz bleiben offen; Details in VALIDIERUNG.md.
 
 **Nutzerauftrag 01.11./02.11.2026:** Cloud-TTS mit Fish Audio Drama 3 primär (mit
 automatischem s2.1-pro-free-Fallback bei HTTP 402) und Google Chirp 3 HD als Backup.

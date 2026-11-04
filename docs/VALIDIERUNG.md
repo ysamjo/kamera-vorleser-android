@@ -1,5 +1,23 @@
 # Umsetzung und Validierung
 
+## 04.11.2026 · Tatsächliche YouTube-Dialogboxen geprüft (1.6.1 / Code 8)
+
+Die zuvor fehlende Sichtprüfung wurde anhand zweier deutscher Spielaufnahmen
+nachgeholt. Quellen, Zeitmarken, Beobachtungen und Grenzen stehen in
+[DIALOGBOX_REFERENZEN.md](DIALOGBOX_REFERENZEN.md). Beide Boxformen sowie Pokédex,
+Frisurenmenü, Antwortliste und Einstellungen wurden visuell geprüft.
+
+Dabei wurden zwei reale Fehlablehnungen der Version 1.6 nachgewiesen: Der helle
+Tierdialog ist überwiegend RGB 243 statt maximal 242; die blaue Box vor blaugrünem
+Hintergrund unterschreitet die bisherige obere Kontrastschwelle. Weiß wird nun
+zugelassen, der Mindestkontrast angepasst und die Abtastung kurzer Zeilen auf den
+Dialog-Innenbereich begrenzt. Zwölf echte Farbstichproben mit manuellen Textgrenzen
+sichern positive und negative Fälle, zusätzlich mit 80-%-RGB-Skalierung.
+
+Elf fokussierte Unit-Tests erfolgreich. Vollprüfung und Rollout werden ergänzt.
+Die vorherige Aussage „reale Spielaufnahmen fehlen“ gilt für den Stand 1.6;
+Kamera-/Hörabnahme im laufenden Spiel bleibt auch nach dieser Sichtprüfung offen.
+
 ## 04.11.2026 · Sprechblasen, Reaktionszeit und Wiederholungen (1.6 / Code 7)
 
 - Die untere Bildschirmzone allein gibt keinen Text mehr frei. OCR-Zeilen müssen

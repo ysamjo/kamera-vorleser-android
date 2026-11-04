@@ -2,11 +2,36 @@ package de.stegmann.kameravorleser;
 
 /** Konservative Flächenprüfung um eine OCR-Zeile, ohne Android-Abhängigkeiten. */
 final class BubbleAppearance {
+    // GRAY umfasst auch das nahezu weiße Innere der tatsächlichen Tierdialogbox.
     enum Surface { NONE, BLUE, GRAY }
     static final int ROWS = 5;
     static final int COLUMNS = 9;
 
     private BubbleAppearance() {}
+
+    static final class SampleRegion {
+        final int left, right, top, bottom, aboveY;
+        SampleRegion(int left, int right, int top, int bottom, int aboveY) {
+            this.left = left; this.right = right; this.top = top;
+            this.bottom = bottom; this.aboveY = aboveY;
+        }
+        int x(int column) { return left + Math.max(1, right - left) * column / (COLUMNS - 1); }
+        int y(int row) { return row == ROWS ? aboveY
+                : top + Math.max(1, bottom - top) * row / (ROWS - 1); }
+    }
+
+    static SampleRegion sampleRegion(int left, int top, int right, int bottom,
+            int width, int height) {
+        int lineHeight = bottom - top;
+        int centerX = (left + right) / 2, centerY = (top + bottom) / 2;
+        int halfWidth = Math.max((right - left) / 2 + lineHeight, (int) (width * .10f));
+        int halfHeight = Math.max(4, lineHeight);
+        // Kurze erste Zeilen beginnen ebenfalls am linken Innenrand der Blase.
+        // Eine symmetrische Mindestbreite würde hier links in die Spielwelt greifen.
+        return new SampleRegion(Math.max(centerX - halfWidth, Math.round(width * .21f)),
+                Math.min(centerX + halfWidth, Math.round(width * .79f)),
+                centerY - halfHeight, centerY + halfHeight, Math.round(height * .68f));
+    }
 
     static Surface classify(int[] pixels) {
         if (pixels.length != ROWS * COLUMNS) return Surface.NONE;
@@ -33,7 +58,9 @@ final class BubbleAppearance {
             int distance = Math.abs(((pixel >> 16) & 255) - channels[0][count / 2])
                     + Math.abs(((pixel >> 8) & 255) - channels[1][count / 2])
                     + Math.abs((pixel & 255) - channels[2][count / 2]);
-            if (distance >= 100) different++;
+            // Dunkelblauer Kasten vor blaugrünem Hintergrund (Intro) hat
+            // weniger Kontrast als ein weißer Tierdialog vor der Spielwelt.
+            if (distance >= 50) different++;
         }
         return different >= 5;
     }
@@ -59,7 +86,7 @@ final class BubbleAppearance {
                 int r = (pixel >> 16) & 255, g = (pixel >> 8) & 255, b = pixel & 255;
                 boolean matches = blue ? b > 70 && b > r + 24 && b > g + 8
                         : Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) <= 30
-                          && Math.min(r, Math.min(g, b)) >= 65 && Math.max(r, Math.max(g, b)) <= 242;
+                          && Math.min(r, Math.min(g, b)) >= 65;
                 if (!matches) continue;
                 count++;
                 if (col < 2) left++;
