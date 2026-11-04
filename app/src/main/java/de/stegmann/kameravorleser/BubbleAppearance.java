@@ -1,0 +1,86 @@
+package de.stegmann.kameravorleser;
+
+/** Konservative Flächenprüfung um eine OCR-Zeile, ohne Android-Abhängigkeiten. */
+final class BubbleAppearance {
+    enum Surface { NONE, BLUE, GRAY }
+    static final int ROWS = 5;
+    static final int COLUMNS = 9;
+
+    private BubbleAppearance() {}
+
+    static Surface classify(int[] pixels) {
+        if (pixels.length != ROWS * COLUMNS) return Surface.NONE;
+        if (isPanel(pixels, true)) return Surface.BLUE;
+        if (isPanel(pixels, false)) return Surface.GRAY;
+        return Surface.NONE;
+    }
+
+    /** Eine bis oberhalb der Dialogzone fortgesetzte Farbfläche ist kein unterer Kasten. */
+    static boolean hasUpperBoundary(int[] panel, int[] above) {
+        int[][] channels = new int[3][panel.length];
+        int count = 0;
+        for (int pixel : panel) {
+            if (pixel < 0) continue;
+            channels[0][count] = (pixel >> 16) & 255;
+            channels[1][count] = (pixel >> 8) & 255;
+            channels[2][count++] = pixel & 255;
+        }
+        if (count < 29) return false;
+        for (int[] channel : channels) java.util.Arrays.sort(channel, 0, count);
+        int different = 0;
+        for (int pixel : above) {
+            if (pixel < 0) continue;
+            int distance = Math.abs(((pixel >> 16) & 255) - channels[0][count / 2])
+                    + Math.abs(((pixel >> 8) & 255) - channels[1][count / 2])
+                    + Math.abs((pixel & 255) - channels[2][count / 2]);
+            if (distance >= 100) different++;
+        }
+        return different >= 5;
+    }
+
+    static boolean inDialogueRegion(float centerX, float centerY) {
+        return centerX >= .21f && centerX <= .79f && centerY >= .74f && centerY <= .98f;
+    }
+
+    static boolean isCharacterLabel(String name) {
+        if (name == null || SpeakerLabels.hasDialogueWords(name)) return false;
+        String key = TextRules.normalize(name);
+        return !key.isEmpty() && !key.matches(
+                "(lagerbestand|inventar|beschreibung|informationen|aufgaben|aufgabe|ziel|ziele|material|materialien|herstellen|rezept|rezepte|karte|hilfe|einstellungen|status|gegenstände|sammlung|menü)");
+    }
+
+    private static boolean isPanel(int[] pixels, boolean blue) {
+        int count = 0, left = 0, right = 0, top = 0, bottom = 0;
+        int[] brightnessValues = new int[pixels.length];
+        for (int row = 0; row < ROWS; row++) {
+            for (int col = 0; col < COLUMNS; col++) {
+                int pixel = pixels[row * COLUMNS + col];
+                if (pixel < 0) continue; // außerhalb des Kamerabilds
+                int r = (pixel >> 16) & 255, g = (pixel >> 8) & 255, b = pixel & 255;
+                boolean matches = blue ? b > 70 && b > r + 24 && b > g + 8
+                        : Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) <= 30
+                          && Math.min(r, Math.min(g, b)) >= 65 && Math.max(r, Math.max(g, b)) <= 242;
+                if (!matches) continue;
+                count++;
+                if (col < 2) left++;
+                if (col > 6) right++;
+                if (row == 0) top++;
+                if (row == ROWS - 1) bottom++;
+                int brightness = (r + g + b) / 3;
+                brightnessValues[count - 1] = brightness;
+            }
+        }
+        // Eine Fläche muss die Schrift auch seitlich und darüber/darunter umschließen.
+        // Einzelne blaue Objekte oder graue Schrift sind kein Dialogkasten.
+        java.util.Arrays.sort(brightnessValues, 0, count);
+        int inliers = 0;
+        if (count > 0) {
+            int median = brightnessValues[count / 2];
+            for (int i = 0; i < count; i++) {
+                if (Math.abs(brightnessValues[i] - median) <= 35) inliers++;
+            }
+        }
+        return count >= 29 && left >= 6 && right >= 6 && top >= 5 && bottom >= 5
+                && (blue || inliers >= count * 0.80f);
+    }
+}

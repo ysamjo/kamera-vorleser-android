@@ -69,17 +69,12 @@ import org.json.JSONArray;
 import org.json.JSONException;
 
 public class MainActivity extends AppCompatActivity {
-    private static final long ANALYSIS_INTERVAL_MS = 180;
+    private static final long ANALYSIS_INTERVAL_MS = DialogueStability.ANALYSIS_INTERVAL_MS;
     private static final int MAX_REMEMBERED_LINES = 500;
     private static final String KEY_DIALOGUE_HISTORY = "dialogueHistoryV2";
     private static final int MAX_QUEUED_UTTERANCES = 2;
-    private static final float STORY_TOP_RATIO = 0.74f;
-    private static final float STORY_LEFT_RATIO = 0.21f;
-    private static final float STORY_RIGHT_RATIO = 0.79f;
     private static final float SPEAKER_TOP_RATIO = 0.70f;
     private static final float SPEAKER_BOTTOM_RATIO = 0.81f;
-    private static final int REQUIRED_STABLE_FRAMES = 2;
-    private static final long STABLE_WINDOW_MS = 1100L;
     private static final String NARRATOR = "Erzähler";
     private static final String PREFS_NAME = "KameraVorleserPrefs";
     private static final String KEY_SOUNDS_ENABLED = "soundsEnabled";
@@ -97,15 +92,6 @@ public class MainActivity extends AppCompatActivity {
     private static final float SPEAKER_MAX_WIDTH = 0.36f; // Speaker-Namen maximal 36% Bildbreite
     private static final float STORY_GAP_MAX_HEIGHT_RATIO = 0.14f; // Max Abstand Speaker->Story: 14% Bildhöhe
     private static final float STORY_GAP_MAX_HORIZONTAL_RATIO = 0.25f; // Max horizontaler Abstand: 25%
-
-    // Blaue Dialog-Erkennung (YUV-Farb-Schwellwerte)
-    private static final int BLUE_MIN_VALUE = 70; // Mindest-Blau-Wert
-    private static final int BLUE_OVER_RED_THRESHOLD = 24; // Blau muss mindestens 24 mehr als Rot sein
-    private static final int BLUE_OVER_GREEN_THRESHOLD = 8; // Blau muss mindestens 8 mehr als Grün sein
-    private static final float BLUE_PIXEL_RATIO = 0.36f; // Mindestens 36% der Pixel müssen blau sein
-    private static final int BLUE_MIN_SAMPLES = 15; // Mindestens 15 Pixel müssen gesampelt werden
-    private static final float BLUE_REGION_WIDTH_RATIO = 0.18f; // Breite der Sampling-Region
-    private static final float BLUE_REGION_HEIGHT_RATIO = 0.10f; // Höhe der Sampling-Region
 
     private PreviewView previewView;
     private TextView statusText;
@@ -137,9 +123,7 @@ public class MainActivity extends AppCompatActivity {
     private final AtomicInteger analysisGeneration = new AtomicInteger();
     private volatile long lastAnalysisAt = 0L;
     private String currentSpeaker = NARRATOR;
-    private String pendingStoryKey = "";
-    private int pendingStoryHits = 0;
-    private long pendingStorySeenAt = 0L;
+    private final DialogueStability dialogueStability = new DialogueStability();
     private float speechRate = 1.0f;
     private boolean characterEffects;
     private String cachedSpeaker = "";
@@ -644,8 +628,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void invalidateAnalysis() {
         analysisGeneration.incrementAndGet();
-        pendingStoryKey = "";
-        pendingStoryHits = 0;
+        dialogueStability.reset();
         lastAnalysisAt = 0L;
     }
 
@@ -714,7 +697,7 @@ public class MainActivity extends AppCompatActivity {
         if (paused || !ttsReady || (cloudSpeechEnabled
                 && android.os.SystemClock.elapsedRealtime() < nextCloudAttemptAt)) return;
 
-        long now = System.currentTimeMillis();
+        long now = android.os.SystemClock.elapsedRealtime();
         if (result.getText().isBlank()) {
             clearPendingStoryIfStale(now);
             runOnUiThread(() -> confidenceText.setVisibility(android.view.View.GONE));
@@ -722,6 +705,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         List<OcrLine> storyLines = new ArrayList<>();
+        List<OcrLine> grayLines = new ArrayList<>();
 
         // OCR-Konfidenz berechnen (Durchschnitt aller TextLines)
         float totalConfidence = 0f;
@@ -730,16 +714,18 @@ public class MainActivity extends AppCompatActivity {
             for (Text.Line line : block.getLines()) {
                 String visible = line.getText().trim().replaceAll("\\s+", " ");
                 Rect box = line.getBoundingBox();
-                boolean normalStory = isInStoryRegion(box, frameWidth, frameHeight);
-                boolean blueStory = isBlueBackedLine(imageProxy, box, rotation);
+                if (!isInStoryRegion(box, frameWidth, frameHeight)) continue;
+                BubbleAppearance.Surface surface = bubbleSurface(imageProxy, box, rotation);
                 String normalized = normalize(visible);
-                if ((!normalStory && !blueStory)
+                if (surface == BubbleAppearance.Surface.NONE
                         || normalized.length() < 3
                         || isActionLabel(visible)
                         || isNonStoryNotification(normalized)) {
                     continue;
                 }
-                storyLines.add(new OcrLine(visible, normalized, box));
+                OcrLine storyLine = new OcrLine(visible, normalized, box);
+                storyLines.add(storyLine);
+                if (surface == BubbleAppearance.Surface.GRAY) grayLines.add(storyLine);
                 // Konfidenz aus der TextLine sammeln (TextBlock hat keine getConfidence() Methode)
                 Float lineConfidence = line.getConfidence();
                 if (lineConfidence != null) {
@@ -760,6 +746,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String detectedSpeaker = detectSpeaker(result, storyLines, frameWidth, frameHeight);
+        // Graue Welt-/Menüflächen sind ohne zugehöriges Namensschild kein Tierdialog.
+        if (!BubbleAppearance.isCharacterLabel(detectedSpeaker)) storyLines.removeAll(grayLines);
         if (detectedSpeaker != null) {
             if (!normalize(currentSpeaker).equals(normalize(detectedSpeaker))) invalidateAnalysis();
             currentSpeaker = detectedSpeaker;
@@ -798,8 +786,7 @@ public class MainActivity extends AppCompatActivity {
         recognizedText.setText(visibleStory);
 
         if (isNonStoryNotification(normalizedStory)) {
-            pendingStoryKey = "";
-            pendingStoryHits = 0;
+            dialogueStability.reset();
             speakerText.setText("SYSTEMMELDUNG");
             showStatus("Ignoriert", true);
             return;
@@ -997,7 +984,7 @@ public class MainActivity extends AppCompatActivity {
         String normalized = normalize(text);
         if (normalized.length() < MIN_SPEAKER_NAME_LENGTH
                 || normalized.length() > MAX_SPEAKER_NAME_LENGTH
-                || isActionLabel(text)) return false;
+                || !BubbleAppearance.isCharacterLabel(text)) return false;
         int words = normalized.split("\\s+").length;
         return words <= MAX_SPEAKER_NAME_WORDS && box.width() < frameWidth * SPEAKER_MAX_WIDTH;
     }
@@ -1014,15 +1001,13 @@ public class MainActivity extends AppCompatActivity {
                 && centerY < SPEAKER_BOTTOM_RATIO
                 && centerX < SPEAKER_MAX_CENTER_X
                 && width < SPEAKER_MAX_WIDTH
-                && !isActionLabel(text);
+                && BubbleAppearance.isCharacterLabel(text);
     }
 
     private boolean isInStoryRegion(Rect box, int frameWidth, int frameHeight) {
         if (box == null) return false;
         float centerX = box.centerX() / (float) frameWidth;
-        return box.centerY() >= frameHeight * STORY_TOP_RATIO
-                && centerX >= STORY_LEFT_RATIO
-                && centerX <= STORY_RIGHT_RATIO;
+        return BubbleAppearance.inDialogueRegion(centerX, box.centerY() / (float) frameHeight);
     }
 
 
@@ -1032,47 +1017,19 @@ public class MainActivity extends AppCompatActivity {
 
 
     private boolean isStableStory(String text, long now) {
-        String key = normalize(text);
-        if (key.isEmpty()) return false;
-
-        // 1. Wachstums-Erkennung (Typewriter-Effekt / Streaming-Text):
-        // Wenn der neue Text mit dem bisherigen beginnt und länger ist, tippt das Spiel noch!
-        if (!pendingStoryKey.isBlank()
-                && key.startsWith(pendingStoryKey)
-                && key.length() > pendingStoryKey.length()) {
-            pendingStoryKey = key;
-            pendingStoryHits = 1;
-            pendingStorySeenAt = now;
-            // Solange der Text aktiv wächst, noch nicht als stabil werten
-            return false;
-        }
-
-        // 2. Stabilitätsprüfung: Bleibt der Text über REQUIRED_STABLE_FRAMES unverändert?
-        boolean same = !pendingStoryKey.isBlank()
-                && now - pendingStorySeenAt <= STABLE_WINDOW_MS
-                && similarStoryText(pendingStoryKey, key);
-        if (same) {
-            pendingStoryHits++;
-        } else {
-            pendingStoryKey = key;
-            pendingStoryHits = 1;
-        }
-        pendingStorySeenAt = now;
-        return pendingStoryHits >= REQUIRED_STABLE_FRAMES;
+        return dialogueStability.accept(text, now);
     }
 
-
-
     private void clearPendingStoryIfStale(long now) {
-        if (now - pendingStorySeenAt <= 700L) return;
-        pendingStoryKey = "";
-        pendingStoryHits = 0;
+        dialogueStability.absent(now);
     }
 
     @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalGetImage.class)
-    private boolean isBlueBackedLine(ImageProxy imageProxy, Rect box, int rotation) {
+    private BubbleAppearance.Surface bubbleSurface(ImageProxy imageProxy, Rect box, int rotation) {
         Image mediaImage = imageProxy.getImage();
-        if (mediaImage == null || box == null || mediaImage.getPlanes().length < 3) return false;
+        if (mediaImage == null || box == null || mediaImage.getPlanes().length < 3) {
+            return BubbleAppearance.Surface.NONE;
+        }
 
         Image.Plane yPlane = mediaImage.getPlanes()[0];
         Image.Plane uPlane = mediaImage.getPlanes()[1];
@@ -1085,17 +1042,20 @@ public class MainActivity extends AppCompatActivity {
         int uprightWidth = rotation == 90 || rotation == 270 ? rawHeight : rawWidth;
         int uprightHeight = rotation == 90 || rotation == 270 ? rawWidth : rawHeight;
 
-        int blue = 0;
-        int sampled = 0;
-        int halfWidth = Math.max(box.width() / 2 + box.height(), (int) (uprightWidth * BLUE_REGION_WIDTH_RATIO));
-        int halfHeight = Math.max(box.height() * 2, (int) (uprightHeight * BLUE_REGION_HEIGHT_RATIO));
+        int[] pixels = new int[BubbleAppearance.ROWS * BubbleAppearance.COLUMNS];
+        java.util.Arrays.fill(pixels, -1);
+        int[] above = new int[BubbleAppearance.COLUMNS];
+        java.util.Arrays.fill(above, -1);
+        int halfWidth = Math.max(box.width() / 2 + box.height(), (int) (uprightWidth * 0.10f));
+        int halfHeight = Math.max(4, box.height());
         int left = box.centerX() - halfWidth;
         int right = box.centerX() + halfWidth;
         int top = box.centerY() - halfHeight;
         int bottom = box.centerY() + halfHeight;
 
-        for (int row = 0; row < 5; row++) {
-            int uprightY = top + Math.max(1, bottom - top) * row / 4;
+        for (int row = 0; row < 6; row++) {
+            int uprightY = row == 5 ? Math.round(uprightHeight * .68f)
+                    : top + Math.max(1, bottom - top) * row / 4;
             for (int column = 0; column < 9; column++) {
                 int uprightX = left + Math.max(1, right - left) * column / 8;
                 int[] raw = toRawCoordinates(uprightX, uprightY, rotation, rawWidth, rawHeight);
@@ -1118,11 +1078,13 @@ public class MainActivity extends AppCompatActivity {
                 int red = clamp((298 * y + 409 * v + 128) >> 8);
                 int green = clamp((298 * y - 100 * u - 208 * v + 128) >> 8);
                 int blueValue = clamp((298 * y + 516 * u + 128) >> 8);
-                sampled++;
-                if (blueValue > BLUE_MIN_VALUE && blueValue > red + BLUE_OVER_RED_THRESHOLD && blueValue > green + BLUE_OVER_GREEN_THRESHOLD) blue++;
+                int pixel = (red << 16) | (green << 8) | blueValue;
+                if (row == 5) above[column] = pixel;
+                else pixels[row * BubbleAppearance.COLUMNS + column] = pixel;
             }
         }
-        return sampled >= BLUE_MIN_SAMPLES && blue >= sampled * BLUE_PIXEL_RATIO;
+        return BubbleAppearance.hasUpperBoundary(pixels, above)
+                ? BubbleAppearance.classify(pixels) : BubbleAppearance.Surface.NONE;
     }
 
     private int[] toRawCoordinates(
