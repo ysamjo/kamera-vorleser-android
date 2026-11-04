@@ -74,9 +74,9 @@ final class DialogueText {
     }
 
     /**
-     * Bereits gehörtes Anfangsstück, auch wenn ML Kit einen Buchstaben verwechselt.
+     * Bereits gehörtes Anfangsstück, auch bei OCR-Verwechslung von Ziffer und Buchstabe.
      * Mindestens drei Wörter und zwei exakte Anker; Einfügungen, Auslassungen und
-     * kurze Wörter (insbesondere Verneinungen) werden niemals unscharf verglichen.
+     * normale Buchstabenänderungen und kurze Wörter werden niemals unscharf verglichen.
      */
     static int heardPrefixWords(String previous, String current) {
         if (previous.isEmpty() || current.isEmpty()) return 0;
@@ -91,7 +91,7 @@ final class DialogueText {
                 String visible = right[i];
                 if (heard.equals(visible)) exact++;
                 else {
-                    if (changed > 0 || !oneLetterDifference(heard, visible)) break;
+                    if (changed > 0 || !oneOcrConfusion(heard, visible)) break;
                     changed++;
                 }
                 int size = i + 1;
@@ -101,11 +101,19 @@ final class DialogueText {
         return covered;
     }
 
-    private static boolean oneLetterDifference(String left, String right) {
+    private static boolean oneOcrConfusion(String left, String right) {
         if (left.length() < 6 || left.length() != right.length()) return false;
         int differences = 0;
         for (int i = 0; i < left.length(); i++) {
-            if (left.charAt(i) != right.charAt(i) && ++differences > 1) return false;
+            char a = left.charAt(i);
+            char b = right.charAt(i);
+            if (a == b) continue;
+            // Nur Ziffer/Buchstabe: Steine/Sterne oder großen/großem sind
+            // mögliche Inhaltsänderungen und dürfen nicht als Rauschen entfallen.
+            boolean confusion = (a == '0' && b == 'o') || (a == 'o' && b == '0')
+                    || (a == '1' && (b == 'l' || b == 'i'))
+                    || (b == '1' && (a == 'l' || a == 'i'));
+            if (!confusion || ++differences > 1) return false;
         }
         return differences == 1;
     }
