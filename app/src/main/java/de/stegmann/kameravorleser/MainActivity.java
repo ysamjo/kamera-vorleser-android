@@ -1046,18 +1046,13 @@ public class MainActivity extends AppCompatActivity {
         java.util.Arrays.fill(pixels, -1);
         int[] above = new int[BubbleAppearance.COLUMNS];
         java.util.Arrays.fill(above, -1);
-        int halfWidth = Math.max(box.width() / 2 + box.height(), (int) (uprightWidth * 0.10f));
-        int halfHeight = Math.max(4, box.height());
-        int left = box.centerX() - halfWidth;
-        int right = box.centerX() + halfWidth;
-        int top = box.centerY() - halfHeight;
-        int bottom = box.centerY() + halfHeight;
+        BubbleAppearance.SampleRegion region = BubbleAppearance.sampleRegion(
+                box.left, box.top, box.right, box.bottom, uprightWidth, uprightHeight);
 
-        for (int row = 0; row < 6; row++) {
-            int uprightY = row == 5 ? Math.round(uprightHeight * .68f)
-                    : top + Math.max(1, bottom - top) * row / 4;
-            for (int column = 0; column < 9; column++) {
-                int uprightX = left + Math.max(1, right - left) * column / 8;
+        for (int row = 0; row <= BubbleAppearance.ROWS; row++) {
+            int uprightY = region.y(row);
+            for (int column = 0; column < BubbleAppearance.COLUMNS; column++) {
+                int uprightX = region.x(column);
                 int[] raw = toRawCoordinates(uprightX, uprightY, rotation, rawWidth, rawHeight);
                 int rawX = raw[0];
                 int rawY = raw[1];
@@ -1079,7 +1074,7 @@ public class MainActivity extends AppCompatActivity {
                 int green = clamp((298 * y - 100 * u - 208 * v + 128) >> 8);
                 int blueValue = clamp((298 * y + 516 * u + 128) >> 8);
                 int pixel = (red << 16) | (green << 8) | blueValue;
-                if (row == 5) above[column] = pixel;
+                if (row == BubbleAppearance.ROWS) above[column] = pixel;
                 else pixels[row * BubbleAppearance.COLUMNS + column] = pixel;
             }
         }

@@ -18,10 +18,13 @@ public class BubbleAppearanceTest {
         assertEquals(BubbleAppearance.Surface.GRAY, BubbleAppearance.classify(panel(0xb0b4ba)));
     }
 
-    @Test public void sceneryAndBlackOrWhiteScreensAreRejected() {
+    @Test public void sceneryBlackScreensAndVaryingGrayAreRejected() {
         assertEquals(BubbleAppearance.Surface.NONE, BubbleAppearance.classify(panel(0x45944a)));
         assertEquals(BubbleAppearance.Surface.NONE, BubbleAppearance.classify(panel(0x202028)));
-        assertEquals(BubbleAppearance.Surface.NONE, BubbleAppearance.classify(panel(0xffffff)));
+        assertEquals(BubbleAppearance.Surface.GRAY, BubbleAppearance.classify(panel(0xffffff)));
+        int[] whiteAbove = new int[9];
+        Arrays.fill(whiteAbove, 0xffffff);
+        assertFalse(BubbleAppearance.hasUpperBoundary(panel(0xffffff), whiteAbove));
         int[] varying = panel(0x707070);
         for (int i = 0; i < 15; i++) varying[i] = 0xd0d0d0;
         assertEquals(BubbleAppearance.Surface.NONE, BubbleAppearance.classify(varying));
@@ -45,6 +48,12 @@ public class BubbleAppearanceTest {
         assertTrue(BubbleAppearance.hasUpperBoundary(panel(0xb0b4ba), above));
         Arrays.fill(above, -1);
         assertFalse(BubbleAppearance.hasUpperBoundary(panel(0xb0b4ba), above));
+    }
+
+    @Test public void reducedBlueContrastDoesNotLoosenWhiteMenuBoundary() {
+        int[] above = new int[9];
+        Arrays.fill(above, 0xdadada);
+        assertFalse(BubbleAppearance.hasUpperBoundary(panel(0xf3f3f3), above));
     }
 
     @Test public void grayAntialiasedGlyphEdgesDoNotVetoTheBackground() {
