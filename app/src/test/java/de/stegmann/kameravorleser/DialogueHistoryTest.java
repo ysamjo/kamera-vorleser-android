@@ -165,12 +165,12 @@ public class DialogueHistoryTest {
         DialogueHistory history = new DialogueHistory(500);
         history.remember("Evoli", "Wir besuchen Professor Tangoloss am großen Baum.");
         assertEquals("Komm mit!", history.unreadText("Evoli",
-                "Professor Tangoloss am großem Baum. Komm mit!"));
-        assertTrue(history.wasSpoken("Evoli", "Professor Tangoloss am großem Baum."));
+                "Professor Tangol0ss am großen Baum. Komm mit!"));
+        assertTrue(history.wasSpoken("Evoli", "Professor Tangol0ss am großen Baum."));
         DialogueHistory restarted = new DialogueHistory(500);
         restarted.restore(history.snapshot());
         assertEquals("Komm mit!", restarted.unreadText("Evoli",
-                "Professor Tangoloss am großem Baum. Komm mit!"));
+                "Professor Tangol0ss am großen Baum. Komm mit!"));
     }
 
     @Test public void severalCompletedWindowsCoverPrefixWithoutRepeatingSecondSection() {
@@ -195,7 +195,7 @@ public class DialogueHistoryTest {
         assertEquals(next, history.unreadText("Evoli", next));
         String noisyKey = DialogueHistory.key("Evoli", "Wir besuchen Professor Tangoloss am großen Baum.");
         history.begin(noisyKey);
-        String noisyNext = "Professor Tangoloss am großem Baum. Komm mit!";
+        String noisyNext = "Professor Tangol0ss am großen Baum. Komm mit!";
         assertTrue(history.awaitsOverlappingSpeech("Evoli", noisyNext));
         history.finish(noisyKey, true);
         assertEquals("Komm mit!", history.unreadText("Evoli", noisyNext));
@@ -211,6 +211,27 @@ public class DialogueHistoryTest {
         assertEquals(other, history.unreadText("Pikachu", other));
         history.allowRepeat("Evoli", other);
         assertEquals(other, history.unreadText("Evoli", other));
+    }
+
+    @Test public void changedNounsInGrowingWindowRemainAudible() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Wir sammeln Steine.");
+        String changed = "Wir sammeln Sterne. Komm mit!";
+        assertFalse(history.wasSpoken("Evoli", changed));
+        assertEquals(changed, history.unreadText("Evoli", changed));
+        history.remember("Evoli", "Wir suchen unsere Steine.");
+        assertEquals("Sterne. Komm mit!", history.unreadText("Evoli",
+                "Wir suchen unsere Sterne. Komm mit!"));
+    }
+
+    @Test public void changedLetterInsideLongWordDoesNotHideNewContent() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Wir lesen Geschichten.");
+        String changed = "Wir lesen Geschickten. Komm mit!";
+        assertEquals(changed, history.unreadText("Evoli", changed));
+        assertFalse(history.awaitsOverlappingSpeech("Evoli", changed));
+        history.begin(DialogueHistory.key("Evoli", "Wir lesen Geschichten."));
+        assertFalse(history.awaitsOverlappingSpeech("Evoli", changed));
     }
 
 }
