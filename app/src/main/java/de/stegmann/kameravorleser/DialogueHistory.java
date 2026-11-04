@@ -45,7 +45,8 @@ final class DialogueHistory {
         return !text.isEmpty() && (previous.equals(text)
                 || (!text.startsWith(previous + " ") && text.split(" ").length == previous.split(" ").length
                     && TextRules.similarEnough(text, previous))
-                || DialogueText.containsWords(previous, text));
+                || DialogueText.containsWords(previous, text)
+                || DialogueText.heardPrefixWords(previous, text) == text.split(" ").length);
     }
 
     /** Schneidet nur bereits vollständig gehörten Text ab; Neu lesen bleibt vollständig. */
@@ -53,18 +54,26 @@ final class DialogueHistory {
         String candidate = key(speaker, visible);
         if (repeatKey != null && matches(repeatKey, candidate)) return visible;
         String prefix = TextRules.normalize(speaker) + SEPARATOR;
-        String text = TextRules.normalize(visible);
-        int heardWords = 0;
-        for (String entry : entries) {
-            if (!entry.startsWith(prefix)) continue;
-            String previous = entry.substring(prefix.length());
-            if (matches(entry, candidate)) return "";
-            int overlap = DialogueText.overlapWords(previous, text);
-            if (overlap >= 3 || text.startsWith(previous + " ")) {
+        String unread = visible;
+        // Mehrere abgeschlossene Fenster können nacheinander denselben Anfang
+        // abdecken. Jeder Durchlauf entfernt Wörter, also bleibt die Schleife endlich.
+        while (!TextRules.normalize(unread).isEmpty()) {
+            String text = TextRules.normalize(unread);
+            int heardWords = 0;
+            for (String entry : entries) {
+                if (!entry.startsWith(prefix)) continue;
+                String previous = entry.substring(prefix.length());
+                if (matches(entry, key(speaker, unread))) return "";
+                int overlap = DialogueText.heardPrefixWords(previous, text);
+                if (text.startsWith(previous + " ")) {
+                    overlap = Math.max(overlap, previous.split(" ").length);
+                }
                 heardWords = Math.max(heardWords, overlap);
             }
+            if (heardWords == 0) return unread;
+            unread = DialogueText.afterWords(unread, heardWords);
         }
-        return DialogueText.afterWords(visible, heardWords);
+        return "";
     }
 
     boolean awaitsOverlappingSpeech(String speaker, String text) {
@@ -74,7 +83,7 @@ final class DialogueHistory {
             if (!entry.startsWith(prefix)) continue;
             String previous = entry.substring(prefix.length());
             if (normalized.startsWith(previous + " ")
-                    || DialogueText.overlapWords(previous, normalized) >= 3) return true;
+                    || DialogueText.heardPrefixWords(previous, normalized) >= 3) return true;
         }
         return false;
     }

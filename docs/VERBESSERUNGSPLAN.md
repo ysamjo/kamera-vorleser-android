@@ -7,6 +7,12 @@
 
 ## Aktueller Umsetzungsstand
 
+**Nutzerauftrag 04.11.2026:** Untere blaue/graue Sprechblasen gezielt filtern,
+Wiederholungen über gespeicherte Textfenster vermeiden, Erkennungsabstand verkürzen
+und App-Icon verbessern. Version 1.6 enthält konservative Farb-/Geometrieprüfungen,
+getestete Ruhezeiten und ergänzte Überlappungsregeln. Reale Spielkonturen und
+hörbare Startlatenz sind noch am Gerät abzunehmen; Details in VALIDIERUNG.md.
+
 **Nutzerauftrag 01.11./02.11.2026:** Cloud-TTS mit Fish Audio Drama 3 primär (mit
 automatischem s2.1-pro-free-Fallback bei HTTP 402) und Google Chirp 3 HD als Backup.
 Auswahl und Konfiguration von zunächst 5, ab Version 1.5 nun 15 festen Figurenrollen

@@ -1,5 +1,54 @@
 # Umsetzung und Validierung
 
+## 04.11.2026 · Sprechblasen, Reaktionszeit und Wiederholungen (1.6 / Code 7)
+
+- Die untere Bildschirmzone allein gibt keinen Text mehr frei. OCR-Zeilen müssen
+  in der unteren mittleren Zone liegen und seitlich sowie darüber/darunter von
+  einer überwiegend blauen oder gleichmäßig grauen Fläche umgeben sein. Zusätzlich
+  muss sich die Fläche von einer Stichprobenreihe oberhalb der Dialogzone abheben.
+  Graue Zeilen benötigen ein aktuelles plausibles Namensschild; typische Menü-
+  Überschriften und Dialogwörter werden als Namensschild abgewiesen. Schriftkanten
+  werden als Ausreißer toleriert. Farbe/Geometrie sind Heuristiken, keine trainierte
+  Erkennung der beiden Originalkonturen. Reale Spielaufnahmen fehlen weiterhin;
+  falsch negative Fälle bei anderer Beleuchtung, Kameraposition oder fehlendem
+  Namensschild sowie gleich gestaltete Beschreibungsfelder bleiben möglich.
+- OCR-Abstand 180 → 120 ms. Zwei identische Befunde bleiben Pflicht. Satzenden
+  benötigen 120 ms Ruhe, Text ohne Satzende 420 ms. Jede Wortänderung setzt die
+  Ruhezeit zurück; die Zeitbasis ist monoton. Das verkürzt den nominellen Abstand
+  um 60 ms, ist aber kein gemessener Gewinn bis zum hörbaren Sprachstart. Ein
+  Typewriter kann auch nach Satzzeichen weitergehen; Cloud-Synthese/Netzwerk bleiben
+  zusätzliche Latenz. Tempo-/Figurenprofile werden nicht verändert.
+- Persistierte, abgeschlossene Fenster werden mehrfach am sichtbaren Anfang
+  abgezogen. Überlappungen ab drei Wörtern tolerieren eine eng begrenzte OCR-
+  Ziffer/Buchstabenverwechslung mit zwei exakten Ankern. Neue Inhaltswörter und
+  Verneinungen bleiben erhalten. Historie bleibt sprecherbezogen (maximal 500
+  Fenster), nur onDone speichert; Stop/Fehler und „Neu lesen“ behalten ihre Semantik.
+- Neues Vektor-Icon mit Sprechblase, Linse und Schallbögen; adaptive Masken ab API 26
+  und monochrome Variante ab API 33. Lokales ZIP vor Umbau unter Archiv/ gesichert.
+- Separates Code-Review durchgeführt; Befunde zu grauen Schriftkanten, Menülabels
+  und Inhaltswortänderungen mit gezielten Regressionstests bearbeitet.
+
+Vollprüfung des Code-Stands `0293a03` (Dokumentationsstand `e107dec`) auf dem Mac
+mit JDK 21 erfolgreich: Debug-/Release-APK, Debug-/Release-Bundle, Debug-/Release-
+Lint, je **91 Unit-Testmethoden**, 0 Fehler/Skips, und Instrumentation-APK.
+Lint jeweils **0 Fehler, 59 Warnungen** (darunter zwei zusätzliche Icon-Hinweise
+zur Vektor-Rasterung vor API 24 und zum monochromen Tag in der API-26-Variante;
+die API-33-Variante enthält das Tag). Keine Baseline oder Unterdrückung ergänzt.
+40 fokussierte Tests zusätzlich unter Linux/JDK 21 und im separaten Review
+bestanden. Lokaler Linux-Gradle-Lauf konnte mangels Android-SDK nicht bauen;
+der erfolgreiche vollständige Mac-Lauf ist der Build-Nachweis.
+
+Datenerhaltender Rollout ausschließlich auf das Pixel 10 Pro
+(`192.168.178.117:5555`, bestätigt als `blazer`): App und Test-APK mit `install -r`.
+Version **1.6 / Code 7** danach per Paketmanager bestätigt. Der direkte Runner
+für `BundledOcrSmokeTest` meldet **1 Test erfolgreich, 0 Skips**. SHA-256 der
+vollständigen Preferences-Datei und des verschlüsselten `no_backup/cloud-tts.bin`
+sind vor/nach dem Lauf identisch. Keine Deinstallation oder Live-Anbieteranfrage.
+Der OCR-Test verwendet synthetischen Text und prüft keine echten Kamerablasen.
+Kameraabnahme mit den beiden echten Spielblasen, akustische Abnahme und
+Ende-zu-Ende-Latenzmessung stehen noch aus. Automatisierte Tests senden keine
+Anbieter-Requests.
+
 ## 02.11.2026 · 15 feste Figurenrollen (1.5 / Code 6)
 
 - Fünf vorhandene Fish-Stimmen um zehn deutsche Fish-Official-Stimmen ergänzt;
