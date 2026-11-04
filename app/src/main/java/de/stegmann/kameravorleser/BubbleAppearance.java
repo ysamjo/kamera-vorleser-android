@@ -52,6 +52,10 @@ final class BubbleAppearance {
         }
         if (count < 29) return false;
         for (int[] channel : channels) java.util.Arrays.sort(channel, 0, count);
+        boolean bluePanel = channels[2][count / 2] > 70
+                && channels[2][count / 2] > channels[0][count / 2] + 24
+                && channels[2][count / 2] > channels[1][count / 2] + 8;
+        int minimumContrast = bluePanel ? 50 : 100;
         int different = 0;
         for (int pixel : above) {
             if (pixel < 0) continue;
@@ -60,7 +64,7 @@ final class BubbleAppearance {
                     + Math.abs((pixel & 255) - channels[2][count / 2]);
             // Dunkelblauer Kasten vor blaugrünem Hintergrund (Intro) hat
             // weniger Kontrast als ein weißer Tierdialog vor der Spielwelt.
-            if (distance >= 50) different++;
+            if (distance >= minimumContrast) different++;
         }
         return different >= 5;
     }

@@ -29,8 +29,9 @@ bleiben erforderlich. Eine weiße Vollbildseite wird weiterhin abgewiesen.
 
 Die blaue Introbox hat ungefähr RGB **58,68,159**. Ihr blaugrüner Hintergrund
 unterscheidet sich weniger stark als die weiße Box von der Spielwelt. Die bisherige
-Kontrastsumme 100 verwarf kurze blaue Zeilen; 50 genügt bei den gemessenen positiven
-und negativen Beispielen auch mit auf 80 % skalierten RGB-Kanälen.
+Kontrastsumme 100 verwarf kurze blaue Zeilen; für blaue Flächen genügt 50 bei den
+gemessenen positiven und negativen Beispielen auch mit auf 80 % skalierten RGB-
+Kanälen. Für helle/neutrale Flächen bleibt die strengere Kontrastsumme 100.
 
 Beide Kästen liegen in diesen 1920×1080-Frames ungefähr zwischen x=340 und x=1580,
 ab y=840. Text beginnt etwa bei x=432, Zeilen bei y=909 und y=984. Der Mindest-

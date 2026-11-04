@@ -50,6 +50,12 @@ public class BubbleAppearanceTest {
         assertFalse(BubbleAppearance.hasUpperBoundary(panel(0xb0b4ba), above));
     }
 
+    @Test public void reducedBlueContrastDoesNotLoosenWhiteMenuBoundary() {
+        int[] above = new int[9];
+        Arrays.fill(above, 0xdadada);
+        assertFalse(BubbleAppearance.hasUpperBoundary(panel(0xf3f3f3), above));
+    }
+
     @Test public void grayAntialiasedGlyphEdgesDoNotVetoTheBackground() {
         int[] pixels = panel(0xb0b4ba);
         pixels[20] = 0x656565;
