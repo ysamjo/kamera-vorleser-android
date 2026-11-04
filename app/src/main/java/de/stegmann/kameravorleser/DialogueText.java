@@ -73,6 +73,43 @@ final class DialogueText {
         return 0;
     }
 
+    /**
+     * Bereits gehörtes Anfangsstück, auch wenn ML Kit einen Buchstaben verwechselt.
+     * Mindestens drei Wörter und zwei exakte Anker; Einfügungen, Auslassungen und
+     * kurze Wörter (insbesondere Verneinungen) werden niemals unscharf verglichen.
+     */
+    static int heardPrefixWords(String previous, String current) {
+        if (previous.isEmpty() || current.isEmpty()) return 0;
+        String[] left = previous.split(" ");
+        String[] right = current.split(" ");
+        int covered = 0;
+        for (int start = 0; start < left.length; start++) {
+            int changed = 0;
+            int exact = 0;
+            for (int i = 0; i < right.length && start + i < left.length; i++) {
+                String heard = left[start + i];
+                String visible = right[i];
+                if (heard.equals(visible)) exact++;
+                else {
+                    if (changed > 0 || !oneLetterDifference(heard, visible)) break;
+                    changed++;
+                }
+                int size = i + 1;
+                if (size >= 3 && exact >= 2) covered = Math.max(covered, size);
+            }
+        }
+        return covered;
+    }
+
+    private static boolean oneLetterDifference(String left, String right) {
+        if (left.length() < 6 || left.length() != right.length()) return false;
+        int differences = 0;
+        for (int i = 0; i < left.length(); i++) {
+            if (left.charAt(i) != right.charAt(i) && ++differences > 1) return false;
+        }
+        return differences == 1;
+    }
+
     static String afterWords(String visible, int words) {
         String text = Normalizer.normalize(visible, Normalizer.Form.NFC);
         if (words == 0) return text;

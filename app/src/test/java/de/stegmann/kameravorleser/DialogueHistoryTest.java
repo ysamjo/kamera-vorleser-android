@@ -161,4 +161,56 @@ public class DialogueHistoryTest {
         history.remember("Pikachu", "Ich werde dir heute bei der Arbeit helfen");
         assertFalse(history.wasSpoken("Pikachu", "Ich werde dir heute nicht bei der Arbeit helfen"));
     }
+    @Test public void ocrLetterNoiseInScrollingWindowDoesNotRepeatHeardPrefix() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Wir besuchen Professor Tangoloss am großen Baum.");
+        assertEquals("Komm mit!", history.unreadText("Evoli",
+                "Professor Tangoloss am großem Baum. Komm mit!"));
+        assertTrue(history.wasSpoken("Evoli", "Professor Tangoloss am großem Baum."));
+        DialogueHistory restarted = new DialogueHistory(500);
+        restarted.restore(history.snapshot());
+        assertEquals("Komm mit!", restarted.unreadText("Evoli",
+                "Professor Tangoloss am großem Baum. Komm mit!"));
+    }
+
+    @Test public void severalCompletedWindowsCoverPrefixWithoutRepeatingSecondSection() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Wir gehen zum Baum.");
+        history.remember("Evoli", "Dort warten unsere Freunde.");
+        assertEquals("Schön, dass du mitkommst!", history.unreadText("Evoli",
+                "Wir gehen zum Baum. Dort warten unsere Freunde. Schön, dass du mitkommst!"));
+    }
+
+    @Test public void noisyPendingWindowWaitsUntilActuallyCompleted() {
+        DialogueHistory history = new DialogueHistory(500);
+        String key = DialogueHistory.key("Evoli", "Wir treffen Professor Tangoloss am Baum.");
+        String next = "Professor Tangoloss am Baun. Komm mit!";
+        history.begin(key);
+        // Der unbekannte kurze OCR-Rest bleibt erhalten, statt als gehört zu gelten.
+        assertEquals(next, history.unreadText("Evoli", next));
+        next = "Professor Tangoloss am Baum. Komm mit!";
+        assertTrue(history.awaitsOverlappingSpeech("Evoli", next));
+        assertEquals(next, history.unreadText("Evoli", next));
+        history.finish(key, false);
+        assertEquals(next, history.unreadText("Evoli", next));
+        String noisyKey = DialogueHistory.key("Evoli", "Wir besuchen Professor Tangoloss am großen Baum.");
+        history.begin(noisyKey);
+        String noisyNext = "Professor Tangoloss am großem Baum. Komm mit!";
+        assertTrue(history.awaitsOverlappingSpeech("Evoli", noisyNext));
+        history.finish(noisyKey, true);
+        assertEquals("Komm mit!", history.unreadText("Evoli", noisyNext));
+    }
+
+    @Test public void newNegationAndOtherSpeakersAreNeverTrimmedByNoisyOverlap() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Wir helfen Professor Tangoloss heute beim Bauen.");
+        String negated = "Professor Tangoloss heute nicht beim Bauen.";
+        assertEquals("nicht beim Bauen.", history.unreadText("Evoli", negated));
+        assertFalse(history.wasSpoken("Evoli", negated));
+        String other = "Professor Tangoloss heute beim Bauen. Komm mit!";
+        assertEquals(other, history.unreadText("Pikachu", other));
+        history.allowRepeat("Evoli", other);
+        assertEquals(other, history.unreadText("Evoli", other));
+    }
+
 }
