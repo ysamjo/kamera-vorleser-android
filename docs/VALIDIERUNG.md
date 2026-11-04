@@ -28,7 +28,23 @@
 - Separates Code-Review durchgeführt; Befunde zu grauen Schriftkanten, Menülabels
   und Inhaltswortänderungen mit gezielten Regressionstests bearbeitet.
 
-Prüfungen und Rollout werden nach dem vollständigen Build unten ergänzt.
+Vollprüfung des Code-Stands `0293a03` (Dokumentationsstand `e107dec`) auf dem Mac
+mit JDK 21 erfolgreich: Debug-/Release-APK, Debug-/Release-Bundle, Debug-/Release-
+Lint, je **91 Unit-Testmethoden**, 0 Fehler/Skips, und Instrumentation-APK.
+Lint jeweils **0 Fehler, 59 Warnungen** (darunter zwei zusätzliche Icon-Hinweise
+zur Vektor-Rasterung vor API 24 und zum monochromen Tag in der API-26-Variante;
+die API-33-Variante enthält das Tag). Keine Baseline oder Unterdrückung ergänzt.
+40 fokussierte Tests zusätzlich unter Linux/JDK 21 und im separaten Review
+bestanden. Lokaler Linux-Gradle-Lauf konnte mangels Android-SDK nicht bauen;
+der erfolgreiche vollständige Mac-Lauf ist der Build-Nachweis.
+
+Datenerhaltender Rollout ausschließlich auf das Pixel 10 Pro
+(`192.168.178.117:5555`, bestätigt als `blazer`): App und Test-APK mit `install -r`.
+Version **1.6 / Code 7** danach per Paketmanager bestätigt. Der direkte Runner
+für `BundledOcrSmokeTest` meldet **1 Test erfolgreich, 0 Skips**. SHA-256 der
+vollständigen Preferences-Datei und des verschlüsselten `no_backup/cloud-tts.bin`
+sind vor/nach dem Lauf identisch. Keine Deinstallation oder Live-Anbieteranfrage.
+Der OCR-Test verwendet synthetischen Text und prüft keine echten Kamerablasen.
 Kameraabnahme mit den beiden echten Spielblasen, akustische Abnahme und
 Ende-zu-Ende-Latenzmessung stehen noch aus. Automatisierte Tests senden keine
 Anbieter-Requests.
