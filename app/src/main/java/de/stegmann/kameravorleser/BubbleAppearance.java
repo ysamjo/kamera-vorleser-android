@@ -1,9 +1,11 @@
 package de.stegmann.kameravorleser;
 
+import java.util.function.BooleanSupplier;
+
 /** Konservative Flächenprüfung um eine OCR-Zeile, ohne Android-Abhängigkeiten. */
 final class BubbleAppearance {
     // GRAY umfasst auch das nahezu weiße Innere der tatsächlichen Tierdialogbox.
-    enum Surface { NONE, BLUE, GRAY }
+    enum Surface { NONE, BLUE, GRAY, OUTLINED }
     static final int ROWS = 5;
     static final int COLUMNS = 9;
 
@@ -40,6 +42,12 @@ final class BubbleAppearance {
         return Surface.NONE;
     }
 
+    static Surface classifyDialogue(int[] pixels, int[] above, BooleanSupplier hasOutline) {
+        Surface surface = classify(pixels);
+        if (surface == Surface.NONE || hasUpperBoundary(pixels, above)) return surface;
+        return hasOutline.getAsBoolean() ? Surface.OUTLINED : Surface.NONE;
+    }
+
     /** Eine bis oberhalb der Dialogzone fortgesetzte Farbfläche ist kein unterer Kasten. */
     static boolean hasUpperBoundary(int[] panel, int[] above) {
         int[][] channels = new int[3][panel.length];
@@ -71,6 +79,45 @@ final class BubbleAppearance {
 
     static boolean inDialogueRegion(float centerX, float centerY) {
         return centerX >= .21f && centerX <= .79f && centerY >= .74f && centerY <= .98f;
+    }
+
+    interface Luma {
+        int at(int x, int y);
+    }
+
+    /**
+     * Kompakte Porträtblase auf einer Karte mit ähnlicher Hintergrundfarbe.
+     * Der dunkle Rand bildet zwei schmale Striche ober- und unterhalb der Zeile.
+     */
+    static boolean hasCompactOutline(int left, int top, int right, int bottom,
+            int frameWidth, int frameHeight, Luma luma) {
+        int width = right - left;
+        int height = bottom - top;
+        if (height < 4 || width < frameWidth * .10f || width > frameWidth * .48f
+                || width < 7 * height || left < 0 || right > frameWidth) return false;
+
+        int upper = findStroke(left, width, top, height, -1, frameHeight, luma);
+        if (upper < 0) return false;
+        int lower = findStroke(left, width, bottom, height, 1, frameHeight, luma);
+        return lower >= 0 && lower - upper >= 2 * height && lower - upper <= 5 * height;
+    }
+
+    private static int findStroke(int left, int width, int start, int height, int direction,
+            int frameHeight, Luma luma) {
+        int spacing = Math.max(2, height / 4);
+        for (int distance = spacing; distance <= 4 * height; distance++) {
+            int y = start + distance * direction;
+            if (y < spacing || y >= frameHeight - spacing) break;
+            int votes = 0;
+            for (int column = 1; column <= 7; column++) {
+                int x = left + width * column / 8;
+                int center = luma.at(x, y);
+                int surrounding = Math.min(luma.at(x, y - spacing), luma.at(x, y + spacing));
+                if (center >= 0 && surrounding - center >= 14) votes++;
+            }
+            if (votes >= 5) return y;
+        }
+        return -1;
     }
 
     static boolean isCharacterLabel(String name) {

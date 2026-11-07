@@ -19,6 +19,46 @@ public class BubbleReferenceTest {
         checkSamples(.8f);
     }
 
+    @Test public void onixPortraitOutlineSeparatesSpeechFromTaskAndControls() throws Exception {
+        Properties fixture = new Properties();
+        try (InputStream input = getClass().getResourceAsStream("/dialogue/portrait-card.properties")) {
+            assertNotNull(input);
+            fixture.load(input);
+        }
+        for (float exposure : new float[] {1f, .8f}) {
+            for (String name : new String[] {"first", "second", "task", "control"}) {
+                String[] coordinates = fixture.getProperty(name + ".box").split(" ");
+                int left = Integer.parseInt(coordinates[0]);
+                int top = Integer.parseInt(coordinates[1]);
+                int right = Integer.parseInt(coordinates[2]);
+                int bottom = Integer.parseInt(coordinates[3]);
+                int start = Integer.parseInt(fixture.getProperty(name + ".start"));
+                String[] rows = fixture.getProperty(name + ".luma").split(" ");
+                BubbleAppearance.Luma luma = (x, y) -> {
+                    for (int column = 1; column <= 7; column++) {
+                        if (x == left + (right - left) * column / 8) {
+                            int offset = (column - 1) * 2;
+                            return Math.round(Integer.parseInt(
+                                    rows[y - start].substring(offset, offset + 2), 16) * exposure);
+                        }
+                    }
+                    throw new AssertionError("Unerwartete Messposition " + x);
+                };
+                boolean outlined = BubbleAppearance.hasCompactOutline(
+                        left, top, right, bottom, 1280, 574, luma);
+                boolean isDialogue = name.equals("first") || name.equals("second");
+                assertEquals(name, isDialogue, outlined);
+                if (isDialogue) {
+                    int[] panel = pixels(fixture.getProperty(name + ".panel"), exposure);
+                    int[] above = pixels(fixture.getProperty(name + ".above"), exposure);
+                    assertFalse(name, BubbleAppearance.hasUpperBoundary(panel, above));
+                    assertEquals(name, BubbleAppearance.Surface.OUTLINED,
+                            BubbleAppearance.classifyDialogue(panel, above, () -> outlined));
+                }
+            }
+        }
+    }
+
     private void checkSamples(float exposure) throws Exception {
         for (String name : CASES) {
             Properties fixture = new Properties();
