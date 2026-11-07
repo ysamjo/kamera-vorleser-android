@@ -27,6 +27,7 @@ final class SpeechQueue {
     }
     boolean contains(String id) { return pending.containsKey(id); }
     String finish(String id) { return pending.remove(id); }
+    String firstKey() { return pending.isEmpty() ? null : pending.values().iterator().next(); }
     int size() { return pending.size(); }
     List<String> drain() {
         List<String> unfinished = new ArrayList<>(pending.values());

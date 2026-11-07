@@ -27,6 +27,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -98,6 +99,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView speakerText;
     private TextView recognizedText;
     private TextView confidenceText;
+    private View dialoguePanel;
+    private View readNowHint;
     private MaterialButton pauseButton;
     private MaterialButton zoomButton;
     private Camera camera;
@@ -114,6 +117,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean cloudSpeechEnabled;
     private String fishKey = "", googleKey = "";
     private long nextCloudAttemptAt;
+    private String interruptedDialogueKey;
     private final VoiceAssignments cloudFishAssignments = new VoiceAssignments();
     private final VoiceAssignments cloudGoogleAssignments = new VoiceAssignments();
     private volatile boolean ttsReady = false;
@@ -123,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
     private final AtomicInteger analysisGeneration = new AtomicInteger();
     private volatile long lastAnalysisAt = 0L;
     private String currentSpeaker = NARRATOR;
+    private String readableDialogue;
     private final SpeakerLabels.Tracker speakerTracker = new SpeakerLabels.Tracker(NARRATOR);
     private final DialogueStability dialogueStability = new DialogueStability();
     private float speechRate = 1.0f;
@@ -212,6 +217,10 @@ public class MainActivity extends AppCompatActivity {
         speakerText = findViewById(R.id.speakerText);
         recognizedText = findViewById(R.id.recognizedText);
         confidenceText = findViewById(R.id.confidenceText);
+        dialoguePanel = findViewById(R.id.dialogPanel);
+        readNowHint = findViewById(R.id.readNowHint);
+        dialoguePanel.setOnClickListener(view -> readNow());
+        setReadableDialogue(null);
         pauseButton = findViewById(R.id.pauseButton);
         zoomButton = findViewById(R.id.zoomButton);
         zoomButton.setOnClickListener(view -> showCameraPicker());
@@ -230,7 +239,9 @@ public class MainActivity extends AppCompatActivity {
             @Override public void status(String id, String message) {
                 if (foreground && !destroyed && speechQueue.contains(id)) showStatus(message, true);
             }
-            @Override public void finished(String id, boolean failed) { finishSpeech(id, failed); }
+            @Override public void finished(String id, boolean failed, boolean partiallyPlayed) {
+                finishSpeech(id, failed, partiallyPlayed);
+            }
         });
 
         // Load sound preference
@@ -288,6 +299,7 @@ public class MainActivity extends AppCompatActivity {
         repeatButton.setOnClickListener(view -> {
             invalidateAnalysis();
             stopSpeech();
+            interruptedDialogueKey = null;
             // Nur die sichtbare Zeile erneut zulassen, die Historie bleibt erhalten.
             dialogueHistory.allowRepeat(currentSpeaker, recognizedText.getText().toString());
             resetLastSpoken();
@@ -575,6 +587,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void finishSpeech(String id, boolean failed) {
+        finishSpeech(id, failed, false);
+    }
+
+    private void finishSpeech(String id, boolean failed, boolean partiallyPlayed) {
         new android.os.Handler(getMainLooper()).post(() -> {
             String key = speechQueue.finish(id);
             if (key == null || destroyed) return;
@@ -590,12 +606,17 @@ public class MainActivity extends AppCompatActivity {
             }
             if (dialogueHistory.finish(key, !failed)) saveDialogueHistory();
             if (failed) {
-                if (cloudSpeechEnabled) nextCloudAttemptAt = android.os.SystemClock.elapsedRealtime() + 10000L;
+                if (partiallyPlayed) interruptedDialogueKey = key;
+                else if (cloudSpeechEnabled) nextCloudAttemptAt = android.os.SystemClock.elapsedRealtime() + 10000L;
                 if (key.equals(DialogueHistory.key(lastSpokenSpeaker, lastSpokenNormalized))) {
                     resetLastSpoken();
                 }
             }
             if (foreground && !paused && speechQueue.size() == 0) {
+                if (partiallyPlayed) {
+                    showInterruptedSpeech();
+                    return;
+                }
                 showStatus(failed ? (cloudSpeechEnabled
                         ? "Sprachausgabe fehlgeschlagen · Zugang/Netz prüfen; neuer Versuch in 10 s"
                         : "Sprachausgabe fehlgeschlagen – versuche erneut") : "Suche Text …", !failed);
@@ -631,6 +652,7 @@ public class MainActivity extends AppCompatActivity {
         analysisGeneration.incrementAndGet();
         dialogueStability.reset();
         speakerTracker.reset();
+        setReadableDialogue(null);
         lastAnalysisAt = 0L;
     }
 
@@ -755,6 +777,7 @@ public class MainActivity extends AppCompatActivity {
 
         if (storyLines.isEmpty()) {
             clearPendingStoryIfStale(now);
+            setReadableDialogue(null);
             speakerText.setText("BEREIT");
             recognizedText.setText("Warte auf Pokopia-Dialog …");
             confidenceText.setVisibility(View.GONE);
@@ -783,11 +806,13 @@ public class MainActivity extends AppCompatActivity {
 
         if (isNonStoryNotification(normalizedStory) || !TextRules.hasDialogueText(normalizedStory)) {
             dialogueStability.reset();
+            setReadableDialogue(null);
             speakerText.setText("SYSTEMMELDUNG");
             if (ttsReady && speechQueue.size() == 0) showStatus("Ignoriert", true);
             return;
         }
 
+        setReadableDialogue(visibleStory);
         boolean stable = dialogueStability.accept(visibleStory, now);
         if (!ttsReady) return;
         boolean idle = speechQueue.size() == 0;
@@ -796,8 +821,16 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        if (interruptedDialogueKey != null) {
+            if (DialogueHistory.matches(interruptedDialogueKey, DialogueHistory.key(currentSpeaker, normalizedStory))) {
+                if (idle) showInterruptedSpeech();
+                return;
+            }
+            interruptedDialogueKey = null;
+        }
+
         if (dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) {
-            if (idle) showStatus("Bereits vorgelesen · NOCHMAL zum Wiederholen", true);
+            if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
             return;
         }
 
@@ -805,26 +838,73 @@ public class MainActivity extends AppCompatActivity {
         if (dialogueHistory.awaitsOverlappingSpeech(currentSpeaker, normalizedStory)) return;
         String unread = dialogueHistory.unreadText(currentSpeaker, visibleStory);
         if (unread.isBlank()) {
-            if (idle) showStatus("Bereits vorgelesen · NOCHMAL zum Wiederholen", true);
+            if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
             return;
         }
-        if (cloudSpeechEnabled && now < nextCloudAttemptAt) {
-            if (idle) showStatus("Sprachausgabe fehlgeschlagen · Zugang/Netz prüfen; neuer Versuch in "
-                    + ((nextCloudAttemptAt - now + 999) / 1000) + " s", false);
-            return;
-        }
+        if (waitingForCloudRetry(now)) return;
 
         // Neuen Dialog vollständig und flüssig sprechen
         if (speechQueue.size() < MAX_QUEUED_UTTERANCES
                 || !normalize(currentSpeaker).equals(cachedSpeaker)) {
-            if (idle && !cloudSpeechEnabled) showStatus("Übergabe an Sprachausgabe …", true);
-            if (!speak(unread, currentSpeaker, normalizedStory)) return;
-            speakerTracker.markSent();
-            lastSpokenNormalized = normalizedStory;
-            lastSpokenSpeaker = normalize(currentSpeaker);
+            if (!submitDialogue(unread, normalizedStory)) return;
             android.util.Log.d("PokopiaTts", "Dialog angenommen, Frame bis Übergabe "
                     + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
         }
+    }
+
+    private void setReadableDialogue(String text) {
+        readableDialogue = ttsReady ? text : null;
+        boolean available = readableDialogue != null;
+        if (dialoguePanel.isClickable() == available) return;
+        dialoguePanel.setClickable(available);
+        dialoguePanel.setFocusable(available);
+        ViewCompat.setScreenReaderFocusable(dialoguePanel, available);
+        readNowHint.setVisibility(available ? View.VISIBLE : View.GONE);
+        if (available) {
+            ViewCompat.replaceAccessibilityAction(dialoguePanel, AccessibilityActionCompat.ACTION_CLICK,
+                    getString(R.string.read_now), (view, arguments) -> view.performClick());
+        } else {
+            ViewCompat.removeAccessibilityAction(dialoguePanel, AccessibilityActionCompat.ACTION_CLICK.getId());
+        }
+    }
+
+    private void readNow() {
+        String text = readableDialogue;
+        if (text == null || !ttsReady || !acceptsFrame(analysisGeneration.get())) return;
+        String normalized = normalize(text);
+        if (DialogueHistory.key(currentSpeaker, normalized).equals(speechQueue.firstKey())
+                || waitingForCloudRetry(android.os.SystemClock.elapsedRealtime())) return;
+
+        // Ein bewusster Tipp darf bereits gehörten Text sofort erneut vorlesen.
+        stopSpeech();
+        if (submitDialogue(text, normalized)) {
+            interruptedDialogueKey = null;
+            android.util.Log.d("PokopiaTts", "Dialog manuell angenommen");
+        }
+    }
+
+    private void showInterruptedSpeech() {
+        showStatus(getString(R.string.read_interrupted), false);
+    }
+
+    private boolean waitingForCloudRetry(long now) {
+        if (!cloudSpeechEnabled || now >= nextCloudAttemptAt) return false;
+        if (speechQueue.size() == 0) {
+            showStatus("Sprachausgabe fehlgeschlagen · Zugang/Netz prüfen; neuer Versuch in "
+                    + ((nextCloudAttemptAt - now + 999) / 1000) + " s", false);
+        }
+        return true;
+    }
+
+    private boolean submitDialogue(String text, String normalizedStory) {
+        if (speechQueue.size() == 0 && !cloudSpeechEnabled) {
+            showStatus("Übergabe an Sprachausgabe …", true);
+        }
+        if (!speak(text, currentSpeaker, normalizedStory)) return false;
+        speakerTracker.markSent();
+        lastSpokenNormalized = normalizedStory;
+        lastSpokenSpeaker = normalize(currentSpeaker);
+        return true;
     }
 
     private boolean speak(String text, String speaker, String dialogueKey) {
@@ -1030,7 +1110,11 @@ public class MainActivity extends AppCompatActivity {
 
 
     private void clearPendingStoryIfStale(long now) {
-        if (dialogueStability.absent(now)) speakerTracker.reset();
+        if (dialogueStability.absent(now)) {
+            speakerTracker.reset();
+            interruptedDialogueKey = null;
+            setReadableDialogue(null);
+        }
     }
 
     @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalGetImage.class)

@@ -2,6 +2,18 @@ package de.stegmann.kameravorleser;
 import org.junit.Test;
 import static org.junit.Assert.*;
 public class SpeechQueueTest {
+    @Test public void firstKeySeparatesActiveDialogueFromQueuedDialogue() {
+        SpeechQueue queue = new SpeechQueue();
+        assertNull(queue.firstKey());
+        String first = queue.add("aktiver Dialog");
+        queue.add("wartender Dialog");
+        assertEquals("aktiver Dialog", queue.firstKey());
+        queue.finish(first);
+        assertEquals("wartender Dialog", queue.firstKey());
+        queue.drain();
+        assertNull(queue.firstKey());
+    }
+
     @Test public void synchronousRejectionAndExceptionFreeOnlyTheirOwnSlot() {
         SpeechQueue queue = new SpeechQueue();
         String active = queue.add("aktiv");

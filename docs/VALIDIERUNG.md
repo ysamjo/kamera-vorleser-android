@@ -1,5 +1,32 @@
 # Umsetzung und Validierung
 
+## 07.11.2026 · Fish-Streaming und „Jetzt vorlesen“ (1.6.5 / Code 12)
+
+Fish liefert per HTTP PCM mit 24 kHz, 16 Bit und einem Kanal. Die App gibt
+die ersten Samples während des laufenden Downloads über AudioTrack aus.
+Google Chirp bleibt bei fehlender Fish-Konfiguration oder einem Fish-Fehler
+vor Wiedergabestart der Ersatz. Nach begonnener Wiedergabe kann ein
+unterbrochener Dialog per Tipp wiederholt werden. Erst vollständig
+abgespielte Dialoge werden als gehört gespeichert. [Fish Audio Streaming](https://docs.fish.audio/features/realtime-streaming)
+
+Die Dialogkarte bietet „Jetzt vorlesen“ an, sobald ein gültiger Dialogtext
+und eine betriebsbereite Sprachausgabe vorliegen. Der Tipp überspringt die
+automatische Bestätigung und zieht einen wartenden Dialog vor. Ein weiterer
+Tipp auf den bereits laufenden Dialog erzeugt keinen zweiten Auftrag.
+
+Im Android-34-Emulator wurden fünf Instrumentation-Tests erfolgreich
+ausgeführt, darunter eine temporäre UI-Probe mit lokalem TTS-Testdouble.
+Sie prüfte Tipp, Accessibility-Aktion, Doppeltipp, Priorisierung und Pause.
+Die AudioTrack-Tests bestätigten Wiedergabefortschritt vor HTTP-Ende sowie
+das Abspielen kurzer Clips und kurzer Restblöcke nach einer Pufferlücke.
+Die Tests verwendeten lokale Ersatzdaten. Die hörbare Latenz bei Fish und
+die Live-Kameraabnahme auf dem Pixel stehen noch aus.
+
+Debug und Release gebaut, jeweils APK, Bundle und 110 Unit-Tests.
+Lint meldete jeweils 0 Fehler und 59 Warnungen. Mit der endgültigen APK
+bestanden die vier eingecheckten AudioTrack-/OCR-Tests erneut im Emulator.
+Das Pixel war beim Rollout-Versuch per WLAN-ADB nicht erreichbar.
+
 ## 07.11.2026 · Pikachu als App-Icon (1.6.4 / Code 11)
 
 Launcher und Kopfzeile verwenden ein gemeinsames farbiges Pikachu-Motiv.

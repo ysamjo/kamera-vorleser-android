@@ -14,11 +14,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-/** Queue und MediaPlayer gehören dem Main Thread. HTTP und Dateien dem Worker. */
+/** Queue und MediaPlayer gehören dem Main Thread. HTTP, PCM und Dateien dem Worker. */
 final class CloudSpeechPlayer {
     interface Listener {
         void status(String id, String status);
-        void finished(String id, boolean failed);
+        void finished(String id, boolean failed, boolean partiallyPlayed);
     }
     private static final class Pending {
         final String id, fishKey, googleKey;
@@ -27,6 +27,7 @@ final class CloudSpeechPlayer {
         final long queuedAt = SystemClock.elapsedRealtime();
         final CloudSpeechClient.Job job = new CloudSpeechClient.Job();
         Future<?> work;
+        PcmSpeechOutput fishOutput;
         Pending(String id, CloudSpeechRequest request, String fishKey, String googleKey, float volume) {
             this.id = id; this.request = request; this.fishKey = fishKey; this.googleKey = googleKey;
             this.volume = volume;
@@ -34,6 +35,7 @@ final class CloudSpeechPlayer {
     }
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService aborter = Executors.newSingleThreadExecutor();
     private final ArrayDeque<Pending> pending = new ArrayDeque<>();
     private final File directory;
     private final Listener listener;
@@ -62,20 +64,39 @@ final class CloudSpeechPlayer {
         Pending item = pending.remove();
         active = item;
         listener.status(item.id, "Erzeuge Sprache · Fish Audio → Google-Backup");
+        item.fishOutput = new PcmSpeechOutput(item.volume, () -> item.job.cancelled,
+                () -> main.post(() -> {
+                    if (active == item && !item.job.cancelled) playbackStarted(item, "Fish Audio");
+                }));
         item.work = worker.submit(() -> {
             File file = null;
             long startedAt = SystemClock.elapsedRealtime();
             try {
-                CloudFallback.Audio audio = new CloudSpeechClient().synthesize(item.request, item.fishKey, item.googleKey, item.job);
+                byte[] audio;
+                CloudSpeechClient client = new CloudSpeechClient();
+                try (PcmSpeechOutput output = item.fishOutput) {
+                    audio = client.playOrSynthesize(item.request, item.fishKey, item.googleKey, item.job, () -> {
+                        client.streamFish(item.request, item.fishKey, item.job, output);
+                        Log.d("PokopiaTts", "Fish Audio · Synthese und Download "
+                                + (SystemClock.elapsedRealtime() - startedAt) + " ms");
+                        output.awaitPlaybackEnd();
+                    }, output::started);
+                }
                 if (item.job.cancelled) return;
-                Log.d("PokopiaTts", audio.provider + " · Synthese und Download "
+                if (audio == null) {
+                    main.post(() -> {
+                        if (active == item && !item.job.cancelled) finish(item, false);
+                    });
+                    return;
+                }
+                Log.d("PokopiaTts", CloudSpeechClient.GOOGLE_BACKUP + " · Synthese und Download "
                         + (SystemClock.elapsedRealtime() - startedAt) + " ms");
                 if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Audioordner nicht verfügbar");
                 file = File.createTempFile("speech-", ".mp3", directory);
-                try (FileOutputStream out = new FileOutputStream(file)) { out.write(audio.bytes); }
+                try (FileOutputStream out = new FileOutputStream(file)) { out.write(audio); }
                 if (item.job.cancelled) { file.delete(); return; }
                 File ready = file;
-                main.post(() -> play(item, ready, audio.provider));
+                main.post(() -> play(item, ready, CloudSpeechClient.GOOGLE_BACKUP));
             } catch (Exception error) {
                 if (file != null) file.delete();
                 main.post(() -> {
@@ -103,9 +124,7 @@ final class CloudSpeechPlayer {
                 if (active == item && player == p && !item.job.cancelled) {
                     try {
                         p.start();
-                        Log.d("PokopiaTts", provider + " · Übergabe bis Wiedergabe "
-                                + (SystemClock.elapsedRealtime() - item.queuedAt) + " ms");
-                        listener.status(item.id, "Lese vor · " + provider);
+                        playbackStarted(item, provider);
                     } catch (RuntimeException error) { finish(item, true); }
                 }
             });
@@ -115,10 +134,16 @@ final class CloudSpeechPlayer {
         } catch (Exception error) { finish(item, true); }
     }
 
+    private void playbackStarted(Pending item, String provider) {
+        Log.d("PokopiaTts", provider + " · Übergabe bis Wiedergabe "
+                + (SystemClock.elapsedRealtime() - item.queuedAt) + " ms");
+        listener.status(item.id, "Lese vor · " + provider);
+    }
+
     private void finish(Pending item, boolean failed) {
         release();
         active = null;
-        listener.finished(item.id, failed);
+        listener.finished(item.id, failed, failed && item.fishOutput.started());
         next();
     }
 
@@ -127,7 +152,8 @@ final class CloudSpeechPlayer {
         Pending old = active;
         active = null; // Zuerst entwerten, dann Netzwerk und Wiedergabe stoppen.
         if (old != null) {
-            old.job.cancel();
+            old.job.cancel(aborter);
+            old.fishOutput.stop();
             if (old.work != null) old.work.cancel(true);
         }
         release();
@@ -144,5 +170,10 @@ final class CloudSpeechPlayer {
         if (audioFile != null) { audioFile.delete(); audioFile = null; }
     }
 
-    void close() { closed = true; stop(); worker.shutdownNow(); }
+    void close() {
+        closed = true;
+        stop();
+        worker.shutdownNow();
+        aborter.shutdown();
+    }
 }
