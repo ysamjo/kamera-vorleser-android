@@ -9,31 +9,46 @@ import static org.junit.Assert.*;
 
 public class CloudSpeechTest {
     @Test public void fishIsPrimaryAndDoesNotSpendGoogleQuotaOnSuccess() throws Exception {
-        AtomicInteger google = new AtomicInteger();
-        CloudFallback.Audio audio = CloudFallback.synthesize(() -> new byte[]{1}, () -> {
-            google.incrementAndGet(); return new byte[]{2};
-        }, () -> false);
-        assertEquals("Fish Audio", audio.provider);
-        assertArrayEquals(new byte[]{1}, audio.bytes);
-        assertEquals(0, google.get());
+        AtomicBoolean started = new AtomicBoolean();
+        byte[] backup = CloudFallback.playOrSynthesize(() -> started.set(true), () -> {
+            fail("Google nur als Backup");
+            return null;
+        }, started::get, () -> false);
+        assertTrue(started.get());
+        assertNull(backup);
     }
 
-    @Test public void errorsAndMissingFishUseGoogleExactlyOnce() throws Exception {
+    @Test public void errorsBeforePlaybackAndMissingFishUseGoogleExactlyOnce() throws Exception {
         AtomicInteger google = new AtomicInteger();
         CloudFallback.Provider backup = () -> { google.incrementAndGet(); return new byte[]{2}; };
-        assertTrue(CloudFallback.synthesize(() -> { throw new IOException("HTTP 429"); }, backup,
-                () -> false).provider.contains("Google Chirp"));
+        assertArrayEquals(new byte[]{2}, CloudFallback.playOrSynthesize(
+                () -> { throw new IOException("HTTP 429"); }, backup, () -> false, () -> false));
         assertEquals(1, google.get());
-        CloudFallback.synthesize(null, backup, () -> false);
+        CloudFallback.playOrSynthesize(null, backup, () -> false, () -> false);
         assertEquals(2, google.get());
+    }
+
+    @Test public void playbackFailureAfterStartNeverSendsTheWholeDialogueToBackup() throws Exception {
+        AtomicBoolean started = new AtomicBoolean();
+        IOException brokenStream = new IOException("PCM-Verbindung unterbrochen");
+        try {
+            CloudFallback.playOrSynthesize(() -> {
+                started.set(true);
+                throw brokenStream;
+            }, () -> { fail("Bereits gestarteten Dialog nicht doppelt lesen"); return null; },
+                    started::get, () -> false);
+            fail("Teilausgabe darf keinen erfolgreichen Abschluss melden");
+        } catch (IOException expected) { assertSame(brokenStream, expected); }
     }
 
     @Test public void stoppingDuringPrimaryFailureNeverSendsTextToBackup() throws Exception {
         AtomicBoolean cancelled = new AtomicBoolean();
         AtomicInteger google = new AtomicInteger();
         try {
-            CloudFallback.synthesize(() -> { cancelled.set(true); throw new IOException("disconnect"); },
-                    () -> { google.incrementAndGet(); return new byte[]{2}; }, cancelled::get);
+            CloudFallback.playOrSynthesize(() -> {
+                cancelled.set(true);
+                throw new IOException("disconnect");
+            }, () -> { google.incrementAndGet(); return new byte[]{2}; }, () -> false, cancelled::get);
             fail("Abbruch erwartet");
         } catch (InterruptedIOException expected) { assertEquals(0, google.get()); }
     }
@@ -41,20 +56,20 @@ public class CloudSpeechTest {
     @Test public void latePrimarySuccessAfterStopIsDiscarded() throws Exception {
         AtomicBoolean cancelled = new AtomicBoolean();
         try {
-            CloudFallback.synthesize(() -> { cancelled.set(true); return new byte[]{1}; },
-                    () -> { fail("Kein Backup nach Stop"); return null; }, cancelled::get);
+            CloudFallback.playOrSynthesize(() -> cancelled.set(true),
+                    () -> { fail("Kein Backup nach Stop"); return null; }, () -> true, cancelled::get);
             fail("Keine Ausgabe nach Stop");
         } catch (InterruptedIOException expected) { /* Abgebrochene Ausgabe darf nie onDone erzeugen. */ }
     }
 
     @Test public void failedBackupPropagatesAndNoProviderIsAConfigurationError() throws Exception {
         try {
-            CloudFallback.synthesize(() -> { throw new IOException("fish"); },
-                    () -> { throw new IOException("google"); }, () -> false);
+            CloudFallback.playOrSynthesize(() -> { throw new IOException("fish"); },
+                    () -> { throw new IOException("google"); }, () -> false, () -> false);
             fail("Fehler erwartet");
         } catch (IOException expected) { assertEquals("google", expected.getMessage()); }
         try {
-            CloudFallback.synthesize(null, null, () -> false);
+            CloudFallback.playOrSynthesize(null, null, () -> false, () -> false);
             fail("Konfiguration fehlt");
         } catch (IOException expected) { assertTrue(expected.getMessage().contains("STIMME")); }
     }
@@ -63,6 +78,8 @@ public class CloudSpeechTest {
         CloudSpeechRequest request = new CloudSpeechRequest("Scho\u0308n! \"Öl\"\\Äpfel\nGrüße", "voice-a",
                 "de-DE-Chirp3-HD-Kore", "fröhlich", 1.1f);
         assertTrue(request.fishBody().contains("[fröhlich] Schön!"));
+        assertTrue(request.fishBody().contains("\"format\":\"pcm\""));
+        assertTrue(request.fishBody().contains("\"sample_rate\":24000"));
         assertTrue(request.fishBody().contains("\\\"Öl\\\""));
         assertTrue(request.fishBody().contains("\\\\Äpfel\\nGrüße"));
         assertTrue(request.googleBody().contains("Schön!"));

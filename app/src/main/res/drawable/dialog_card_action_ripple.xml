@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#333267DF">
+    <item
+        android:id="@android:id/mask"
+        android:drawable="@drawable/dialog_card_background" />
+</ripple>

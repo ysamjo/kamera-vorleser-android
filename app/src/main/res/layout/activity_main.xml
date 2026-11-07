@@ -212,6 +212,7 @@
         android:layout_marginTop="10dp"
         android:layout_marginEnd="10dp"
         android:background="@drawable/dialog_card_background"
+        android:foreground="@drawable/dialog_card_action_ripple"
         android:orientation="vertical"
         android:paddingStart="18dp"
         android:paddingTop="14dp"
@@ -249,16 +250,36 @@
             android:textSize="16sp"
             android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/confidenceText"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:fontFamily="sans-serif-rounded"
-            android:text=""
-            android:textColor="@color/navy_ink"
-            android:textSize="10sp"
-            android:visibility="gone" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/readNowHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:layout_marginEnd="10dp"
+                android:fontFamily="sans-serif-rounded"
+                android:importantForAccessibility="no"
+                android:text="@string/read_now"
+                android:textColor="@color/navy_ink"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/confidenceText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:fontFamily="sans-serif-rounded"
+                android:textColor="@color/navy_ink"
+                android:textSize="10sp"
+                android:visibility="gone" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout

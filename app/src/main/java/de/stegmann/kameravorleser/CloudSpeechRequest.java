@@ -5,6 +5,7 @@ import java.text.Normalizer;
 
 /** Unveränderlicher Snapshot einer Ausgabe, ohne Android oder Zugangsdaten. */
 final class CloudSpeechRequest {
+    static final int FISH_SAMPLE_RATE = 24000;
     final String text, fishVoice, googleVoice, direction;
     final float speed;
 
@@ -22,7 +23,8 @@ final class CloudSpeechRequest {
     String fishBody() {
         return "{\"text\":" + quote(direction.isEmpty() ? text : "[" + direction + "] " + text)
                 + ",\"reference_id\":" + quote(fishVoice)
-                + ",\"language\":\"de-DE\",\"format\":\"mp3\",\"prosody\":{\"speed\":" + speed + "}}";
+                + ",\"language\":\"de-DE\",\"format\":\"pcm\",\"sample_rate\":" + FISH_SAMPLE_RATE
+                + ",\"prosody\":{\"speed\":" + speed + "}}";
     }
 
     String googleBody() {

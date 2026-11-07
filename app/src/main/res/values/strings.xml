@@ -2,4 +2,6 @@
 <resources>
     <string name="speech_settings">STIMME</string>
     <string name="camera_selection">Kamera und Zoom auswählen</string>
+    <string name="read_now">Jetzt vorlesen</string>
+    <string name="read_interrupted">Unterbrochen · Jetzt vorlesen</string>
 </resources>
