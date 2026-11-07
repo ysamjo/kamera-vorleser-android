@@ -234,4 +234,37 @@ public class DialogueHistoryTest {
         assertFalse(history.awaitsOverlappingSpeech("Evoli", changed));
     }
 
+    @Test public void sameTextWithoutDetectedSpeakerIsNotRepeated() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Pikachu", "Komm mit zum großen Baum!");
+        assertTrue(history.wasSpokenAnywhere("Komm mit zum großen Baum!"));
+        assertTrue(history.wasSpokenAnywhere("Komm mit zum großen Baun!"));
+        assertFalse(history.wasSpokenAnywhere("Etwas ganz anderes."));
+    }
+
+    @Test public void unknownSpeakerTrimsHeardPrefixAcrossSpeakers() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Evoli", "Wir gehen zum großen Baum.");
+        assertEquals("Dort warten wir.", history.unreadTextAnywhere(
+                "Wir gehen zum großen Baum. Dort warten wir."));
+        assertEquals("", history.unreadTextAnywhere("Wir gehen zum großen Baum."));
+    }
+
+    @Test public void unknownSpeakerWaitsForPendingOverlap() {
+        DialogueHistory history = new DialogueHistory(500);
+        String scrolling = "Wir gehen zum großen Baum. Dort warten wir.";
+        history.begin(DialogueHistory.key("Evoli", "Wir gehen zum großen Baum."));
+        assertTrue(history.awaitsOverlappingSpeechAnywhere(scrolling));
+        assertEquals(scrolling, history.unreadTextAnywhere(scrolling));
+        history.finish(DialogueHistory.key("Evoli", "Wir gehen zum großen Baum."), true);
+        assertEquals("Dort warten wir.", history.unreadTextAnywhere(scrolling));
+    }
+
+    @Test public void unknownSpeakerRepeatAllowsFullTextAgain() {
+        DialogueHistory history = new DialogueHistory(500);
+        history.remember("Pikachu", "Hallo, mein Freund!");
+        history.allowRepeat("Pikachu", "Hallo mein Freund");
+        assertEquals("Hallo mein Freund", history.unreadTextAnywhere("Hallo mein Freund"));
+    }
+
 }
