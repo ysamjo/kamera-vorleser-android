@@ -1,5 +1,21 @@
 # Umsetzung und Validierung
 
+## 07.11.2026 · Keine Wiederholung ohne Namensschild (1.6.6 / Code 13)
+
+Fehlt das Namensschild, konnte dieselbe Zeile nach einem kurzen Kamera-
+Aussetzer erneut starten: Der Sprecher fiel auf die Erzählerstimme zurück,
+die Historie lag aber unter dem Figurennamen. Solange kein Namensschild
+erkannt wird, prüft die Wiederholungssperre deshalb den Text unabhängig vom
+Sprecher. Auch Scroll-Erweiterungen warten auf das Ende der laufenden Ausgabe
+und schneiden den bereits gehörten Anfang über alle Sprecher hinweg ab.
+„Jetzt vorlesen“ bleibt davon unberührt und liest weiterhin bewusst erneut.
+
+Vier neue Unit-Tests decken gleichen Text ohne Namensschild, OCR-Rauschen,
+Scroll-Überlappung und die einmalige Freigabe ab. Der Mac-Build mit JDK 21
+(`:app:testDebugUnitTest :app:assembleDebug`) ist erfolgreich; der
+`DialogueHistoryTest` meldet 24 Tests, 0 Fehler/Skips. Die hörbare
+Geräteabnahme auf dem Pixel steht aus, weil WLAN-ADB dort nicht erreichbar war.
+
 ## 07.11.2026 · Fish-Streaming und „Jetzt vorlesen“ (1.6.5 / Code 12)
 
 Fish liefert per HTTP PCM mit 24 kHz, 16 Bit und einem Kanal. Die App gibt
