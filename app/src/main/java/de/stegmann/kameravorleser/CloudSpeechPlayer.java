@@ -5,6 +5,8 @@ import android.media.MediaPlayer;
 import android.media.AudioAttributes;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
+import android.util.Log;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayDeque;
@@ -22,6 +24,7 @@ final class CloudSpeechPlayer {
         final String id, fishKey, googleKey;
         final CloudSpeechRequest request;
         final float volume;
+        final long queuedAt = SystemClock.elapsedRealtime();
         final CloudSpeechClient.Job job = new CloudSpeechClient.Job();
         Future<?> work;
         Pending(String id, CloudSpeechRequest request, String fishKey, String googleKey, float volume) {
@@ -61,9 +64,12 @@ final class CloudSpeechPlayer {
         listener.status(item.id, "Erzeuge Sprache · Fish Audio → Google-Backup");
         item.work = worker.submit(() -> {
             File file = null;
+            long startedAt = SystemClock.elapsedRealtime();
             try {
                 CloudFallback.Audio audio = new CloudSpeechClient().synthesize(item.request, item.fishKey, item.googleKey, item.job);
                 if (item.job.cancelled) return;
+                Log.d("PokopiaTts", audio.provider + " · Synthese und Download "
+                        + (SystemClock.elapsedRealtime() - startedAt) + " ms");
                 if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Audioordner nicht verfügbar");
                 file = File.createTempFile("speech-", ".mp3", directory);
                 try (FileOutputStream out = new FileOutputStream(file)) { out.write(audio.bytes); }
@@ -73,7 +79,11 @@ final class CloudSpeechPlayer {
             } catch (Exception error) {
                 if (file != null) file.delete();
                 main.post(() -> {
-                    if (active == item && !item.job.cancelled) finish(item, true);
+                    if (active == item && !item.job.cancelled) {
+                        Log.d("PokopiaTts", "Cloud-Ausgabe fehlgeschlagen nach "
+                                + (SystemClock.elapsedRealtime() - startedAt) + " ms");
+                        finish(item, true);
+                    }
                 });
             }
         });
@@ -93,6 +103,8 @@ final class CloudSpeechPlayer {
                 if (active == item && player == p && !item.job.cancelled) {
                     try {
                         p.start();
+                        Log.d("PokopiaTts", provider + " · Übergabe bis Wiedergabe "
+                                + (SystemClock.elapsedRealtime() - item.queuedAt) + " ms");
                         listener.status(item.id, "Lese vor · " + provider);
                     } catch (RuntimeException error) { finish(item, true); }
                 }

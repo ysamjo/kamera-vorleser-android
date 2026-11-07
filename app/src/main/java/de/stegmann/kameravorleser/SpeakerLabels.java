@@ -8,6 +8,62 @@ import static de.stegmann.kameravorleser.StoryTextAssembler.Line;
 final class SpeakerLabels {
     private SpeakerLabels() {}
 
+    /** Ein einzelner abweichender Name ändert die Stimme desselben Dialogs nicht. */
+    static final class Tracker {
+        private final String fallback;
+        private String previousText = "";
+        private String previousKey = "";
+        private String speaker;
+        private String candidate = "";
+        private boolean waitedForName;
+        private boolean sent;
+
+        Tracker(String fallback) {
+            this.fallback = fallback;
+            reset();
+        }
+
+        String observe(String text, String label) {
+            String textKey = TextRules.normalize(text);
+            boolean sameText = textKey.equals(previousKey);
+            if (sent && sameText) return speaker;
+            String key = label == null ? "" : TextRules.normalize(label);
+            sent = false;
+            if (!sameText && !DialogueText.sameDialogue(previousText, text)) {
+                speaker = key.isEmpty() ? fallback : label;
+                candidate = "";
+                waitedForName = false;
+            } else if (key.isEmpty() || key.equals(TextRules.normalize(speaker))) {
+                candidate = "";
+            } else if (key.equals(candidate)) {
+                speaker = label;
+                candidate = "";
+            } else {
+                candidate = key;
+            }
+            previousText = text;
+            previousKey = textKey;
+            return speaker;
+        }
+
+        boolean waitForName() {
+            if (candidate.isEmpty() || waitedForName) return false;
+            waitedForName = true;
+            return true;
+        }
+
+        void markSent() { sent = true; }
+
+        void reset() {
+            previousText = "";
+            previousKey = "";
+            speaker = fallback;
+            candidate = "";
+            waitedForName = false;
+            sent = false;
+        }
+    }
+
     static boolean hasDialogueWords(String text) {
         return text.matches(".*[.!?…].*") || TextRules.normalize(text).matches(
                 ".*\\b(ich|du|wir|ihr|das|ist|sind|hallo|guten|danke|bitte|komm)\\b.*")

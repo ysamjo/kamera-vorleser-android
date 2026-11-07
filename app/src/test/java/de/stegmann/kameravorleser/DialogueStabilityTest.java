@@ -44,6 +44,13 @@ public class DialogueStabilityTest {
         assertTrue(stability.accept("Hallo!", 2020));
         stability.reset();
         assertFalse(stability.accept("Hallo!", 2140));
-        assertFalse(stability.accept("Hallo!", 3000));
+        assertFalse(stability.accept("Hallo!", 4200));
+    }
+
+    @Test public void slowPositiveFramesStillConfirmTheSameText() {
+        DialogueStability stability = new DialogueStability();
+        assertFalse(stability.accept("Achtung! Einsturzgefährdete Felsformation!", 1000));
+        assertTrue(stability.accept("Achtung! Einsturzgefährdete Felsformation!", 1850));
+        assertFalse(stability.accept("Achtung! Einsturzgefährdete Felsformation! Weiter geht es.", 2700));
     }
 }
