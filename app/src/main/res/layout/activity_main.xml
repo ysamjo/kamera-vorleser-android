@@ -114,13 +114,13 @@
             android:layout_width="44dp"
             android:layout_height="44dp"
             android:background="@drawable/emblem_background"
-            android:padding="7dp">
+            android:padding="4dp">
 
             <ImageView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:contentDescription="Pokopia Story-Vorleser"
-                android:src="@drawable/ic_story_lens" />
+                android:src="@drawable/ic_pikachu" />
         </FrameLayout>
 
         <LinearLayout

@@ -1,5 +1,21 @@
 # Umsetzung und Validierung
 
+## 07.11.2026 · Pikachu als App-Icon (1.6.4 / Code 11)
+
+Launcher und Kopfzeile verwenden ein gemeinsames farbiges Pikachu-Motiv.
+Für Launcher-Themes gibt es eine einfarbige Variante mit ausgesparten
+Gesichtsmerkmalen. Der adaptive Vordergrund hält den Innenabstand beim
+Skalieren proportional. [Android-Richtlinien für adaptive Icons](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive)
+
+Die Pikachu-Fassung wurde mit `adb install -r` auf dem Pixel 10 Pro installiert.
+Der Render-Test für Launcher, Theme und Kopfzeile lief auf dem Pixel durch.
+Die WLAN-Verbindung brach beim Abruf der Pixel-Vorschau ab. Die Sichtprüfung
+erfolgte lokal aus den Vektordaten bei 128 und 48 Pixeln sowie für die
+einfarbige Variante und das Emblem. Der abschließende Quellstand mit der
+bereinigten Farbressource wurde als Debug- und Release-APK und -Bundle gebaut.
+Je 100 Unit-Tests, Instrumentation-APK und Lint mit jeweils 0 Fehlern
+und 59 Warnungen erfolgreich.
+
 ## 07.11.2026 · Porträtblase auf der Habitatkarte (1.6.3 / Code 10)
 
 Im Nutzerfoto liest das gebündelte ML Kit beide Zeilen der kleinen
