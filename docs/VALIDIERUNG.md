@@ -1,5 +1,30 @@
 # Umsetzung und Validierung
 
+## 07.11.2026 · Porträtblase auf der Habitatkarte (1.6.3 / Code 10)
+
+Im Nutzerfoto liest das gebündelte ML Kit beide Zeilen der kleinen
+Onix-Sprechblase mit einzelnen OCR-Fehlern. Die alte Flächenprüfung verwirft
+beide, weil sich das Blau der Blase kaum von der Karte darüber abhebt.
+Als zusätzliche Freigabe zählen jetzt zwei schmale dunkle Konturen unmittelbar
+über und unter ausreichend breiten Zeilen in der Dialogzone. Für diese
+Konturform ist kein Namensschild erforderlich. Das Porträt selbst wird nicht
+als Figurenname ausgewertet.
+
+Ein temporärer Gerätetest mit der Originaldatei und den ML-Kit-Zeilengrenzen
+auf dem Pixel 10 Pro bestätigt zwei freigegebene Blasenzeilen. Beide Zeilen
+der Aufgabenbeschreibung liegen außerhalb der Dialogzone. Der dauerhafte
+Regressionstest enthält nur RGB- und Helligkeitsmessungen aus dem Foto und
+prüft zusätzlich die untere Bedienleiste und 80 Prozent Helligkeit. Die
+temporäre Bildkopie wurde aus dem App-Cache entfernt. Es gab keine
+Anbieteranfrage. Live-Kamera und hörbare Ausgabe stehen zur Abnahme aus.
+
+Debug- und Release-APKs und -Bundles sowie Instrumentation-APK gebaut.
+Je 100 Unit-Tests erfolgreich. Lint jeweils 0 Fehler und 59 Warnungen.
+Version 1.6.3 datenerhaltend auf dem Pixel installiert und im Vordergrund
+gestartet. Der abschließende synthetische OCR-Smoke-Test bestand ohne Skips.
+Einstellungen und verschlüsselter Zugang waren beim finalen Update per
+Prüfsumme unverändert.
+
 ## 07.11.2026 · Erkannte Dialoge an die Sprachausgabe übergeben (1.6.2 / Code 9)
 
 Die Wortliste konnte gültige, bereits angezeigte Dialoge dauerhaft sperren.

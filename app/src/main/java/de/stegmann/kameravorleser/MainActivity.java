@@ -700,7 +700,7 @@ public class MainActivity extends AppCompatActivity {
         long now = android.os.SystemClock.elapsedRealtime();
         if (result.getText().isBlank()) {
             clearPendingStoryIfStale(now);
-            runOnUiThread(() -> confidenceText.setVisibility(android.view.View.GONE));
+            confidenceText.setVisibility(View.GONE);
             return;
         }
 
@@ -757,7 +757,10 @@ public class MainActivity extends AppCompatActivity {
             clearPendingStoryIfStale(now);
             speakerText.setText("BEREIT");
             recognizedText.setText("Warte auf Pokopia-Dialog …");
-            runOnUiThread(() -> confidenceText.setVisibility(android.view.View.GONE));
+            confidenceText.setVisibility(View.GONE);
+            if (ttsReady && speechQueue.size() == 0 && now >= nextCloudAttemptAt) {
+                showStatus("Suche Text …", true);
+            }
             return;
         }
 
@@ -1084,8 +1087,43 @@ public class MainActivity extends AppCompatActivity {
                 else pixels[row * BubbleAppearance.COLUMNS + column] = pixel;
             }
         }
-        return BubbleAppearance.hasUpperBoundary(pixels, above)
-                ? BubbleAppearance.classify(pixels) : BubbleAppearance.Surface.NONE;
+        return BubbleAppearance.classifyDialogue(pixels, above, () ->
+                hasCompactOutline(box, rotation, rawWidth, rawHeight, yPlane, yBuffer));
+    }
+
+    private boolean hasCompactOutline(Rect box, int rotation, int rawWidth, int rawHeight,
+            Image.Plane yPlane, ByteBuffer yBuffer) {
+        int rowStride = yPlane.getRowStride();
+        int pixelStride = yPlane.getPixelStride();
+        int origin, stepX, stepY;
+        switch (rotation) {
+            case 90:
+                origin = (rawHeight - 1) * rowStride;
+                stepX = -rowStride;
+                stepY = pixelStride;
+                break;
+            case 180:
+                origin = (rawHeight - 1) * rowStride + (rawWidth - 1) * pixelStride;
+                stepX = -pixelStride;
+                stepY = -rowStride;
+                break;
+            case 270:
+                origin = (rawWidth - 1) * pixelStride;
+                stepX = rowStride;
+                stepY = -pixelStride;
+                break;
+            default:
+                origin = 0;
+                stepX = pixelStride;
+                stepY = rowStride;
+        }
+        int uprightWidth = rotation == 90 || rotation == 270 ? rawHeight : rawWidth;
+        int uprightHeight = rotation == 90 || rotation == 270 ? rawWidth : rawHeight;
+        return BubbleAppearance.hasCompactOutline(box.left, box.top, box.right, box.bottom,
+                uprightWidth, uprightHeight, (x, y) -> {
+                    int index = origin + x * stepX + y * stepY;
+                    return index < 0 || index >= yBuffer.limit() ? -1 : yBuffer.get(index) & 0xff;
+                });
     }
 
     private int[] toRawCoordinates(
