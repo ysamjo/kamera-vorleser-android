@@ -795,6 +795,10 @@ public class MainActivity extends AppCompatActivity {
         }
         String normalizedStory = normalize(visibleStory);
         currentSpeaker = speakerTracker.observe(visibleStory, detectedSpeaker);
+        // Ohne Namensschild ist der Sprecher nicht sicher. Dann darf dieselbe
+        // Zeile nicht erneut starten, nur weil sie unter einem anderen Namen liegt.
+        boolean speakerUncertain = detectedSpeaker == null
+                && normalize(currentSpeaker).equals(normalize(NARRATOR));
 
         VoiceProfile visibleProfile = voiceProfileFor(normalize(currentSpeaker));
         speakerText.setText(
@@ -829,14 +833,20 @@ public class MainActivity extends AppCompatActivity {
             interruptedDialogueKey = null;
         }
 
-        if (dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) {
+        if (speakerUncertain
+                ? dialogueHistory.wasSpokenAnywhere(normalizedStory)
+                : dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) {
             if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
             return;
         }
 
         // Scroll-Erweiterungen warten auf onDone: erst dann ist der alte Teil wirklich gehört.
-        if (dialogueHistory.awaitsOverlappingSpeech(currentSpeaker, normalizedStory)) return;
-        String unread = dialogueHistory.unreadText(currentSpeaker, visibleStory);
+        if (speakerUncertain
+                ? dialogueHistory.awaitsOverlappingSpeechAnywhere(normalizedStory)
+                : dialogueHistory.awaitsOverlappingSpeech(currentSpeaker, normalizedStory)) return;
+        String unread = speakerUncertain
+                ? dialogueHistory.unreadTextAnywhere(visibleStory)
+                : dialogueHistory.unreadText(currentSpeaker, visibleStory);
         if (unread.isBlank()) {
             if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
             return;

@@ -40,13 +40,34 @@ final class DialogueHistory {
         int other = candidate.indexOf(SEPARATOR);
         if (delimiter < 0 || other < 0
                 || !entry.substring(0, delimiter).equals(candidate.substring(0, other))) return false;
-        String previous = entry.substring(delimiter + 1);
-        String text = candidate.substring(other + 1);
+        return matchesText(entry.substring(delimiter + 1), candidate.substring(other + 1));
+    }
+
+    private static boolean matchesText(String previous, String text) {
         return !text.isEmpty() && (previous.equals(text)
                 || (!text.startsWith(previous + " ") && text.split(" ").length == previous.split(" ").length
                     && TextRules.similarEnough(text, previous))
                 || DialogueText.containsWords(previous, text)
                 || DialogueText.heardPrefixWords(previous, text) == text.split(" ").length);
+    }
+
+    private static String textPart(String entry) {
+        int delimiter = entry.indexOf(SEPARATOR);
+        return delimiter < 0 ? "" : entry.substring(delimiter + 1);
+    }
+
+    /**
+     * Gleicher Text unabhängig vom Sprecher. Wird nur verwendet, solange das
+     * Namensschild fehlt: Ein erneutes Vorlesen derselben Zeile wäre sonst ein
+     * Fehler, weil der Sprecher nicht sicher bestimmt werden kann.
+     */
+    boolean wasSpokenAnywhere(String text) {
+        String normalized = TextRules.normalize(text);
+        if (normalized.isEmpty()) return false;
+        for (String entry : pending) if (matchesText(textPart(entry), normalized)) return true;
+        if (repeatKey != null && matchesText(textPart(repeatKey), normalized)) return false;
+        for (String entry : entries) if (matchesText(textPart(entry), normalized)) return true;
+        return false;
     }
 
     /** Schneidet nur bereits vollständig gehörten Text ab; Neu lesen bleibt vollständig. */
@@ -86,6 +107,40 @@ final class DialogueHistory {
                     || DialogueText.heardPrefixWords(previous, normalized) >= 3) return true;
         }
         return false;
+    }
+
+    /** Wie {@link #awaitsOverlappingSpeech}, aber ohne sicheren Sprecher. */
+    boolean awaitsOverlappingSpeechAnywhere(String text) {
+        String normalized = TextRules.normalize(text);
+        if (normalized.isEmpty()) return false;
+        for (String entry : pending) {
+            String previous = textPart(entry);
+            if (normalized.startsWith(previous + " ")
+                    || DialogueText.heardPrefixWords(previous, normalized) >= 3) return true;
+        }
+        return false;
+    }
+
+    /** Wie {@link #unreadText}, aber über alle gespeicherten Sprecher hinweg. */
+    String unreadTextAnywhere(String visible) {
+        if (repeatKey != null && matchesText(textPart(repeatKey), TextRules.normalize(visible))) return visible;
+        String unread = visible;
+        while (!TextRules.normalize(unread).isEmpty()) {
+            String text = TextRules.normalize(unread);
+            int heardWords = 0;
+            for (String entry : entries) {
+                String previous = textPart(entry);
+                if (matchesText(previous, text)) return "";
+                int overlap = DialogueText.heardPrefixWords(previous, text);
+                if (text.startsWith(previous + " ")) {
+                    overlap = Math.max(overlap, previous.split(" ").length);
+                }
+                heardWords = Math.max(heardWords, overlap);
+            }
+            if (heardWords == 0) return unread;
+            unread = DialogueText.afterWords(unread, heardWords);
+        }
+        return "";
     }
 
     void allowRepeat(String speaker, String text) {
