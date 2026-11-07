@@ -123,6 +123,7 @@ public class MainActivity extends AppCompatActivity {
     private final AtomicInteger analysisGeneration = new AtomicInteger();
     private volatile long lastAnalysisAt = 0L;
     private String currentSpeaker = NARRATOR;
+    private final SpeakerLabels.Tracker speakerTracker = new SpeakerLabels.Tracker(NARRATOR);
     private final DialogueStability dialogueStability = new DialogueStability();
     private float speechRate = 1.0f;
     private boolean characterEffects;
@@ -629,6 +630,7 @@ public class MainActivity extends AppCompatActivity {
     private void invalidateAnalysis() {
         analysisGeneration.incrementAndGet();
         dialogueStability.reset();
+        speakerTracker.reset();
         lastAnalysisAt = 0L;
     }
 
@@ -669,7 +671,7 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     if (!acceptsFrame(generation)) return;
                     if (task.isSuccessful()) {
-                        handleRecognizedText(task.getResult(), imageProxy, rotation, width, height);
+                        handleRecognizedText(task.getResult(), imageProxy, rotation, width, height, now);
                     } else {
                         showStatus("Texterkennung fehlgeschlagen – versuche erneut", false);
                     }
@@ -692,11 +694,9 @@ public class MainActivity extends AppCompatActivity {
             ImageProxy imageProxy,
             int rotation,
             int frameWidth,
-            int frameHeight
+            int frameHeight,
+            long frameStartedAt
     ) {
-        if (paused || !ttsReady || (cloudSpeechEnabled
-                && android.os.SystemClock.elapsedRealtime() < nextCloudAttemptAt)) return;
-
         long now = android.os.SystemClock.elapsedRealtime();
         if (result.getText().isBlank()) {
             clearPendingStoryIfStale(now);
@@ -718,7 +718,7 @@ public class MainActivity extends AppCompatActivity {
                 BubbleAppearance.Surface surface = bubbleSurface(imageProxy, box, rotation);
                 String normalized = normalize(visible);
                 if (surface == BubbleAppearance.Surface.NONE
-                        || normalized.length() < 3
+                        || (normalized.length() < 3 && !TextRules.hasDialogueText(normalized))
                         || isActionLabel(visible)
                         || isNonStoryNotification(normalized)) {
                     continue;
@@ -749,12 +749,9 @@ public class MainActivity extends AppCompatActivity {
         // Graue Welt-/Menüflächen sind ohne zugehöriges Namensschild kein Tierdialog.
         if (!BubbleAppearance.isCharacterLabel(detectedSpeaker)) storyLines.removeAll(grayLines);
         if (detectedSpeaker != null) {
-            if (!normalize(currentSpeaker).equals(normalize(detectedSpeaker))) invalidateAnalysis();
-            currentSpeaker = detectedSpeaker;
+            String labelKey = normalize(detectedSpeaker);
+            storyLines.removeIf(line -> line.normalized.equals(labelKey));
         }
-
-        String speakerKey = normalize(currentSpeaker);
-        storyLines.removeIf(line -> line.normalized.equals(speakerKey));
 
         if (storyLines.isEmpty()) {
             clearPendingStoryIfStale(now);
@@ -765,17 +762,13 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String visibleStory = DialogueText.withoutSpeaker(
-                assembleStoryText(storyLines), currentSpeaker);
+                assembleStoryText(storyLines), detectedSpeaker);
         if (visibleStory.isBlank()) {
             clearPendingStoryIfStale(now);
             return;
         }
-        if (detectedSpeaker == null && !currentSpeaker.equals(NARRATOR)
-                && !DialogueText.sameDialogue(recognizedText.getText().toString(), visibleStory)) {
-            currentSpeaker = NARRATOR;
-            invalidateAnalysis();
-        }
         String normalizedStory = normalize(visibleStory);
+        currentSpeaker = speakerTracker.observe(visibleStory, detectedSpeaker);
 
         VoiceProfile visibleProfile = voiceProfileFor(normalize(currentSpeaker));
         speakerText.setText(
@@ -785,33 +778,49 @@ public class MainActivity extends AppCompatActivity {
         );
         recognizedText.setText(visibleStory);
 
-        if (isNonStoryNotification(normalizedStory)) {
+        if (isNonStoryNotification(normalizedStory) || !TextRules.hasDialogueText(normalizedStory)) {
             dialogueStability.reset();
             speakerText.setText("SYSTEMMELDUNG");
-            showStatus("Ignoriert", true);
+            if (ttsReady && speechQueue.size() == 0) showStatus("Ignoriert", true);
             return;
         }
 
-        if (!looksLikeGermanStory(visibleStory) || !isStableStory(visibleStory, now)) {
-            showStatus("Prüfe Dialog …", true);
+        boolean stable = dialogueStability.accept(visibleStory, now);
+        if (!ttsReady) return;
+        boolean idle = speechQueue.size() == 0;
+        if (!stable || speakerTracker.waitForName()) {
+            if (idle) showStatus("Prüfe Dialog …", true);
             return;
         }
 
-        if (speechQueue.size() > 0 && !normalize(currentSpeaker).equals(cachedSpeaker)) stopSpeech();
-        if (dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) return;
+        if (dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) {
+            if (idle) showStatus("Bereits vorgelesen · NOCHMAL zum Wiederholen", true);
+            return;
+        }
 
         // Scroll-Erweiterungen warten auf onDone: erst dann ist der alte Teil wirklich gehört.
         if (dialogueHistory.awaitsOverlappingSpeech(currentSpeaker, normalizedStory)) return;
         String unread = dialogueHistory.unreadText(currentSpeaker, visibleStory);
-        if (unread.isBlank()) return;
+        if (unread.isBlank()) {
+            if (idle) showStatus("Bereits vorgelesen · NOCHMAL zum Wiederholen", true);
+            return;
+        }
+        if (cloudSpeechEnabled && now < nextCloudAttemptAt) {
+            if (idle) showStatus("Sprachausgabe fehlgeschlagen · Zugang/Netz prüfen; neuer Versuch in "
+                    + ((nextCloudAttemptAt - now + 999) / 1000) + " s", false);
+            return;
+        }
 
         // Neuen Dialog vollständig und flüssig sprechen
-        if (ttsReady && (speechQueue.size() < MAX_QUEUED_UTTERANCES
-                || !normalize(currentSpeaker).equals(cachedSpeaker))) {
+        if (speechQueue.size() < MAX_QUEUED_UTTERANCES
+                || !normalize(currentSpeaker).equals(cachedSpeaker)) {
+            if (idle && !cloudSpeechEnabled) showStatus("Übergabe an Sprachausgabe …", true);
             if (!speak(unread, currentSpeaker, normalizedStory)) return;
+            speakerTracker.markSent();
             lastSpokenNormalized = normalizedStory;
             lastSpokenSpeaker = normalize(currentSpeaker);
-            showStatus("Lese vor …", true);
+            android.util.Log.d("PokopiaTts", "Dialog angenommen, Frame bis Übergabe "
+                    + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
         }
     }
 
@@ -940,6 +949,7 @@ public class MainActivity extends AppCompatActivity {
                 Rect box = line.getBoundingBox();
                 String candidate = line.getText().trim().replaceAll("\\s+", " ");
                 if (!isSpeakerLabel(box, frameWidth, frameHeight, candidate)) continue;
+                if (storyLines.size() == 1 && box.equals(storyLines.get(0).box)) continue;
                 if (box != null && box.top > bestTop) {
                     bestTop = box.top;
                     best = candidate;
@@ -1016,12 +1026,8 @@ public class MainActivity extends AppCompatActivity {
 
 
 
-    private boolean isStableStory(String text, long now) {
-        return dialogueStability.accept(text, now);
-    }
-
     private void clearPendingStoryIfStale(long now) {
-        dialogueStability.absent(now);
+        if (dialogueStability.absent(now)) speakerTracker.reset();
     }
 
     @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalGetImage.class)

@@ -2,15 +2,15 @@ package de.stegmann.kameravorleser;
 
 import java.util.Locale;
 import java.text.Normalizer;
+import java.util.regex.Pattern;
 
-/** Bestehende Filter und Ähnlichkeitsschwellen, unverändert und separat testbar. */
+/** Textfilter und Ähnlichkeitsschwellen für erkannte Dialoge. */
 final class TextRules {
+    private static final Pattern NON_WORD = Pattern.compile("[^\\p{L}\\p{N}]+");
     private static final float SIMILARITY_MIN_LENGTH_RATIO = 0.85f; // Story-Text muss mindestens 85% der Länge haben
     private static final float SIMILARITY_MAX_LEVENSHTEIN_RATIO = 0.12f; // Max 12% Levenshtein-Distanz (tolerant gegen Screen-Rauschen)
     private static final float DUPLICATE_MIN_LENGTH_RATIO = 0.80f; // Duplikat-Erkennung: 80% Mindestlänge
     private static final float DUPLICATE_MAX_LEVENSHTEIN_RATIO = 0.10f; // Max 10% für Duplikate
-    private static final int MIN_STORY_LETTERS = 4; // Mindestens 4 Buchstaben für Story-Text
-    private static final int MAX_SPEAKER_NAME_LENGTH = 28;
 
     static boolean isActionLabel(String text) {
         String value = normalize(text);
@@ -25,13 +25,14 @@ final class TextRules {
                 || value.matches(".*wird gespeichert.*");
     }
 
-    static boolean looksLikeGermanStory(String text) {
-        String value = normalize(text);
-        int letters = value.replaceAll("[^\\p{L}]", "").length();
-        if (letters < MIN_STORY_LETTERS || !value.matches(".*[aeiouäöü].*")) return false;
-        if (value.length() <= MAX_SPEAKER_NAME_LENGTH) return true;
-        // Erweiterte Erkennung deutscher Story-Sätze mit typischen Dialogwörtern
-        return value.matches(".*\\b(ich|du|er|sie|es|wir|ihr|der|die|das|den|dem|des|ein|eine|einen|einem|einer|eines|ist|sind|war|waren|hat|haben|hatte|kann|kannst|können|wird|wirst|werden|und|oder|aber|doch|auch|noch|schon|jetzt|dann|was|wie|wer|wo|wann|warum|hier|dort|diese|dieser|dieses|diesem|mein|dein|sein|ihr|unser|mit|bei|von|zu|nach|aus|für|auf|an|in|um|gegen|über|unter|hallo|danke|bitte|komm|kommt|schau|schaut|pass|geht|geh|sieh|sieht|gut|guten|toll|super|willkommen|hast|habe|bist|seid|müssen|musst|soll|sollte|sollten|wollen|will|wollte|nimm|nimmst|geben|gibt|mach|macht|sehen|hilfe|hilf)\\b.*");
+    static boolean hasDialogueText(String normalized) {
+        int letters = 0;
+        for (int index = 0; index < normalized.length();) {
+            int codePoint = normalized.codePointAt(index);
+            if (Character.isLetter(codePoint) && ++letters == 2) return true;
+            index += Character.charCount(codePoint);
+        }
+        return false;
     }
 
     static boolean similarStoryText(String left, String right) {
@@ -66,8 +67,7 @@ final class TextRules {
     }
 
     static String normalize(String value) {
-        return Normalizer.normalize(value, Normalizer.Form.NFC).toLowerCase(Locale.GERMAN)
-                .replaceAll("[^\\p{L}\\p{N}]+", " ")
-                .trim();
+        String lower = Normalizer.normalize(value, Normalizer.Form.NFC).toLowerCase(Locale.GERMAN);
+        return NON_WORD.matcher(lower).replaceAll(" ").trim();
     }
 }

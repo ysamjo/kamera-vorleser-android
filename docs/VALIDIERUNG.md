@@ -1,5 +1,29 @@
 # Umsetzung und Validierung
 
+## 07.11.2026 · Erkannte Dialoge an die Sprachausgabe übergeben (1.6.2 / Code 9)
+
+Die Wortliste konnte gültige, bereits angezeigte Dialoge dauerhaft sperren.
+Nach der Sprechblasenprüfung genügen zwei Buchstaben, weiterhin mit Filter für
+Bedienhinweise und Systemmeldungen. Ein einzelner abweichender Name setzt die
+Textprüfung nicht mehr zurück. Ein noch unbestätigtes Namensschild kann die
+Übergabe einmal um einen OCR-Befund verschieben. Für bereits übergebenen,
+identisch sichtbaren Text bleibt die Stimme fest. Ein neuer Dialog oder eine
+Unterbrechung kann die Zuordnung wieder ändern.
+
+Zwei positive OCR-Befunde dürfen bis zu 2 s auseinanderliegen. Bei erkannter
+Abwesenheit greift weiterhin der kürzere Reset nach 700 ms. OCR läuft auch bei
+fehlender oder vorübergehend ausgefallener Sprachausgabe weiter. Das HUD
+unterscheidet Dialogprüfung, bereits vorgelesenen Text, Synthese und Wiedergabe.
+Die Timing-Meldungen unter `PokopiaTts` enthalten Zeiten und den Anbieter.
+
+Debug-/Release-APKs und -Bundles, Instrumentation-APK, je 99 Unit-Tests
+und Lint mit jeweils 0 Fehlern und 59 Warnungen erfolgreich. Version 1.6.2
+datenerhaltend auf dem Pixel 10 Pro installiert und im Vordergrund gestartet.
+Ein synthetischer OCR-Gerätetest erfolgreich, 0 Skips. Einstellungen und
+verschlüsselter Zugang hatten vor und nach dem Update identische Prüfsummen.
+Der konkrete Dialog aus dem Spiel und die hörbare Cloud-Latenz sind mit diesen
+Tests noch nicht abgenommen.
+
 ## 04.11.2026 · Tatsächliche YouTube-Dialogboxen geprüft (1.6.1 / Code 8)
 
 Die zuvor fehlende Sichtprüfung wurde anhand zweier deutscher Spielaufnahmen
