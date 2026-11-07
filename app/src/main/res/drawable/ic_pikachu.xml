@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+
+    <!-- Helle Kontur hält die schwarzen Ohrspitzen auch auf dunklem Grund sichtbar. -->
+    <path
+        android:fillColor="@color/gold"
+        android:strokeColor="#FFF0A8"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2"
+        android:pathData="M20,34C15,27 14,18 17,11C22,12 29,20 31,30C34,29 38,29 41,30C43,20 50,12 55,11C58,18 57,27 52,34C57,38 60,44 60,50C60,60 50,64 36,64C22,64 12,60 12,50C12,44 15,38 20,34z" />
+    <path
+        android:fillColor="#242034"
+        android:pathData="M17,11C21,12 24,15 27,20Q22,20 17,24C16,19 15,15 17,11zM55,11C51,12 48,15 45,20Q50,20 55,24C56,19 57,15 55,11z" />
+    <path
+        android:fillColor="#EF474C"
+        android:pathData="M21.5,46a5.2,5.2 0,1 0,0 10.4a5.2,5.2 0,1 0,0 -10.4zM50.5,46a5.2,5.2 0,1 0,0 10.4a5.2,5.2 0,1 0,0 -10.4z" />
+    <path
+        android:fillColor="#242034"
+        android:pathData="M27,38a3.5,3.9 0,1 0,0 7.8a3.5,3.9 0,1 0,0 -7.8zM45,38a3.5,3.9 0,1 0,0 7.8a3.5,3.9 0,1 0,0 -7.8zM34.6,46.3Q36,45.3 37.4,46.3Q36,49.2 34.6,46.3zM29,50Q33,54 36,50.5Q39,54 43,50C42,56 40,59 36,59C32,59 30,56 29,50z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26.1,39.1a1.2,1.3 0,1 0,0 2.6a1.2,1.3 0,1 0,0 -2.6zM44.1,39.1a1.2,1.3 0,1 0,0 2.6a1.2,1.3 0,1 0,0 -2.6z" />
+    <path
+        android:fillColor="#FF898A"
+        android:pathData="M32.8,56Q36,53.6 39.2,56Q38,58 36,58Q34,58 32.8,56z" />
+</vector>
