@@ -80,6 +80,8 @@ public class CloudSpeechTest {
         assertTrue(request.fishBody().contains("[fröhlich] Schön!"));
         assertTrue(request.fishBody().contains("\"format\":\"pcm\""));
         assertTrue(request.fishBody().contains("\"sample_rate\":24000"));
+        assertTrue(request.fishBody().contains("\"latency\":\"balanced\""));
+        assertTrue(request.fishBody().contains("\"chunk_length\":150"));
         assertTrue(request.fishBody().contains("\\\"Öl\\\""));
         assertTrue(request.fishBody().contains("\\\\Äpfel\\nGrüße"));
         assertTrue(request.googleBody().contains("Schön!"));

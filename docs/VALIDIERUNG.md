@@ -1,5 +1,28 @@
 # Umsetzung und Validierung
 
+## 09.11.2026 · Kürzere Wartezeit bis zum ersten Ton (1.6.7 / Code 14)
+
+Nach der Texterkennung blieben drei vermeidbare Posten vor dem hörbaren Start:
+Fish nutzte die Standard-Latenz, jede Ausgabe baute eine neue Verbindung auf,
+und ohne Guthaben lief vor jedem Dialog erneut ein HTTP-402-Versuch gegen
+`drama-3`. Die Fish-Anfrage setzt jetzt `latency: balanced` und
+`chunk_length: 150`; beide Werte sind dokumentierte Fish-Parameter für
+niedrigere Zeit bis zum ersten Audioblock. Erfolgreich vollständig gelesene
+Antworten werden nicht mehr getrennt, damit die nächste Ausgabe die
+Keep-alive-Verbindung wiederverwendet. Ein einmal beobachteter HTTP-402
+schaltet für die restliche Sitzung direkt auf `s2.1-pro-free`; nach einem
+Neustart wird `drama-3` erneut versucht. Der neue Logeintrag
+`Fish Audio · erster Ton nach … ms` misst ab Übergabe an den Player bis zum
+ersten PCM-Block und trennt diese Zeit von der gesamten Wiedergabedauer.
+
+Die Anfrage-Tests prüfen die neuen Fish-Parameter, ein neuer Regressionstest
+deckt das Überspringen des wiederholten 402-Versuchs ab; der bestehende
+Streaming-Test prüft jetzt, dass nur Fehlerantworten getrennt werden. Geprüft
+mit `:app:assembleDebug :app:lintDebug :app:testDebugUnitTest` unter JDK 21:
+Build erfolgreich, 115 Unit-Tests ohne Fehler/Skips, Lint 0 Fehler und
+59 Warnungen. Die Gerätemessung der hörbaren Latenz und die akustische
+Abnahme der `balanced`-Qualität stehen noch aus.
+
 ## 07.11.2026 · Keine Wiederholung ohne Namensschild (1.6.6 / Code 13)
 
 Fehlt das Namensschild, konnte dieselbe Zeile nach einem kurzen Kamera-
