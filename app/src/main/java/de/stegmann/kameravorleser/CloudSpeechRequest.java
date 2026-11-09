@@ -24,6 +24,9 @@ final class CloudSpeechRequest {
         return "{\"text\":" + quote(direction.isEmpty() ? text : "[" + direction + "] " + text)
                 + ",\"reference_id\":" + quote(fishVoice)
                 + ",\"language\":\"de-DE\",\"format\":\"pcm\",\"sample_rate\":" + FISH_SAMPLE_RATE
+                // balanced senkt die Zeit bis zum ersten Audioblock; kleinere Chunks
+                // liefern bei längeren Dialogen früher hörbaren Ton.
+                + ",\"latency\":\"balanced\",\"chunk_length\":150"
                 + ",\"prosody\":{\"speed\":" + speed + "}}";
     }
 

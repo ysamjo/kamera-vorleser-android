@@ -41,8 +41,29 @@ public class FishStreamingRequestTest {
         assertFalse(free.getInstanceFollowRedirects());
         assertTrue(new String(free.sent.toByteArray(), StandardCharsets.UTF_8).contains("\"format\":\"pcm\""));
         assertTrue(paid.disconnected);
-        assertTrue(free.disconnected);
+        // Erfolgreiche Antworten bleiben für Keep-alive offen; Fehler werden getrennt.
+        assertFalse(free.disconnected);
         assertEquals(2, played.get());
+    }
+
+    @Test public void afterAPaymentErrorLaterDialoguesSkipDramaThree() throws Exception {
+        FakeConnection paid = new FakeConnection(402);
+        FakeConnection firstFree = new FakeConnection(200);
+        FakeConnection secondFree = new FakeConnection(200);
+        ArrayDeque<FakeConnection> calls = new ArrayDeque<>();
+        calls.add(paid);
+        calls.add(firstFree);
+        calls.add(secondFree);
+        CloudSpeechClient client = new CloudSpeechClient(endpoint -> calls.remove());
+
+        client.streamFish(REQUEST, "test", new CloudSpeechClient.Job(), (audio, count) -> { });
+        client.streamFish(REQUEST, "test", new CloudSpeechClient.Job(), (audio, count) -> { });
+
+        assertTrue(calls.isEmpty());
+        assertEquals("drama-3", paid.getRequestProperty("model"));
+        assertEquals("s2.1-pro-free", firstFree.getRequestProperty("model"));
+        // Der zweite Dialog bezahlt keinen erneuten 402-Versuch.
+        assertEquals("s2.1-pro-free", secondFree.getRequestProperty("model"));
     }
 
     @Test public void cancellingAPaymentErrorDoesNotSendASecondRequest() throws Exception {

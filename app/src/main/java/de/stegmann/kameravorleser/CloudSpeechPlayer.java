@@ -35,6 +35,8 @@ final class CloudSpeechPlayer {
     }
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    // Ein Client pro Player: Keep-alive und die 402-Modellwahl gelten über Dialoge hinweg.
+    private final CloudSpeechClient client = new CloudSpeechClient();
     private final ExecutorService aborter = Executors.newSingleThreadExecutor();
     private final ArrayDeque<Pending> pending = new ArrayDeque<>();
     private final File directory;
@@ -65,15 +67,18 @@ final class CloudSpeechPlayer {
         active = item;
         listener.status(item.id, "Erzeuge Sprache · Fish Audio → Google-Backup");
         item.fishOutput = new PcmSpeechOutput(item.volume, () -> item.job.cancelled,
-                () -> main.post(() -> {
-                    if (active == item && !item.job.cancelled) playbackStarted(item, "Fish Audio");
-                }));
+                () -> {
+                    Log.d("PokopiaTts", "Fish Audio · erster Ton nach "
+                            + (SystemClock.elapsedRealtime() - item.queuedAt) + " ms");
+                    main.post(() -> {
+                        if (active == item && !item.job.cancelled) playbackStarted(item, "Fish Audio");
+                    });
+                });
         item.work = worker.submit(() -> {
             File file = null;
             long startedAt = SystemClock.elapsedRealtime();
             try {
                 byte[] audio;
-                CloudSpeechClient client = new CloudSpeechClient();
                 try (PcmSpeechOutput output = item.fishOutput) {
                     audio = client.playOrSynthesize(item.request, item.fishKey, item.googleKey, item.job, () -> {
                         client.streamFish(item.request, item.fishKey, item.job, output);

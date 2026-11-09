@@ -54,6 +54,9 @@ final class CloudSpeechClient {
     }
 
     private final ConnectionFactory connections;
+    // Ein 402 bleibt für diese Sitzung bestehen: Ohne Guthaben würde sonst jeder
+    // Dialog erneut einen vollständigen HTTP-Versuch gegen Drama 3 bezahlen.
+    private volatile boolean freeModelOnly;
 
     CloudSpeechClient() { this(endpoint -> (HttpURLConnection) new URL(endpoint).openConnection()); }
 
@@ -69,13 +72,17 @@ final class CloudSpeechClient {
 
     void streamFish(CloudSpeechRequest request, String fishKey, Job job, PcmSpeechStream.Sink sink)
             throws IOException {
-        try {
-            streamFishModel(request, fishKey, job, sink, "drama-3");
-        } catch (HttpFailure error) {
-            if (error.status != 402) throw error;
-            CloudFallback.check(() -> job.cancelled);
-            streamFishModel(request, fishKey, job, sink, "s2.1-pro-free");
+        if (!freeModelOnly) {
+            try {
+                streamFishModel(request, fishKey, job, sink, "drama-3");
+                return;
+            } catch (HttpFailure error) {
+                if (error.status != 402) throw error;
+                CloudFallback.check(() -> job.cancelled);
+                freeModelOnly = true;
+            }
         }
+        streamFishModel(request, fishKey, job, sink, "s2.1-pro-free");
     }
 
     private void streamFishModel(CloudSpeechRequest request, String fishKey, Job job,
@@ -128,6 +135,7 @@ final class CloudSpeechClient {
             throw new IOException("Zugangsdaten enthalten einen Zeilenumbruch");
         }
         HttpURLConnection connection = connections.open(endpoint);
+        boolean reusable = false;
         try {
             job.attach(connection);
             connection.setInstanceFollowRedirects(false); // Zugangsdaten nie an andere Hosts weiterleiten.
@@ -148,10 +156,14 @@ final class CloudSpeechClient {
                 throw new HttpFailure(model != null ? "Fish Audio" : "Google Chirp", status);
             }
             try (InputStream input = connection.getInputStream()) {
-                return response.read(connection, input);
+                T value = response.read(connection, input);
+                // Vollständig gelesene Antworten bleiben im Keep-alive-Pool; der
+                // nächste Dialog spart dadurch TCP-/TLS-Aufbau.
+                reusable = true;
+                return value;
             }
         } finally {
-            try { connection.disconnect(); }
+            try { if (!reusable) connection.disconnect(); }
             finally { job.detach(); }
         }
     }
