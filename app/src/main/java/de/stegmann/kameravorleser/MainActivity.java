@@ -79,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String NARRATOR = "Erzähler";
     private static final String PREFS_NAME = "KameraVorleserPrefs";
     private static final String KEY_SOUNDS_ENABLED = "soundsEnabled";
+    private static final String KEY_GAME_PROFILE = "gameProfileV1";
     private static final String THORSTEN_ENGINE = "com.k2fsa.sherpa.onnx.tts.engine";
     private static final String THORSTEN_SETUP = "thorstenEngineConfiguredV1";
     private static final String THORSTEN_DOWNLOAD = "https://k2-fsa.github.io/sherpa/onnx/tts/apk-engine.html";
@@ -150,6 +151,9 @@ public class MainActivity extends AppCompatActivity {
     private CameraInfo wideCamera;
 
     private String previousSpeaker = "";
+
+    // Erkennungsprofil: POKOPIA = bewährte Literale, GENERIC_LOWER_THIRD = unteres Drittel (Zelda-like Spiele)
+    private volatile GameProfile gameProfile = GameProfile.POKOPIA;
 
     // Dialog & Satzfluss-Tracking (Wachstum, Klick-Erweiterung, Duplikatvermeidung)
     private String lastSpokenNormalized = "";
@@ -271,6 +275,8 @@ public class MainActivity extends AppCompatActivity {
         volumeSeekBar.setProgress(Math.round(volume * 100));
         characterEffects = prefs.getBoolean("characterEffects", false);
         selectedEngine = prefs.getString("speechEngine", "");
+        gameProfile = "generic".equals(prefs.getString(KEY_GAME_PROFILE, "pokopia"))
+                ? GameProfile.GENERIC_LOWER_THIRD : GameProfile.POKOPIA;
         startSpeechEngine(selectedEngine);
 
         // Initialize tone generator for audio feedback
@@ -389,7 +395,8 @@ public class MainActivity extends AppCompatActivity {
         stopSpeech();
         String[] choices = {"Fish Audio + Google-Backup einrichten", "Probehören: Umlaute und Sprecherwechsel",
                 "Figureneffekte: " + (characterEffects ? "EIN" : "AUS"), "Normales Sprechtempo (1,0×)",
-                "Lokale Sprachengine auswählen", "Deutsche Offline-Stimme auswählen", "Thorsten einrichten / aktivieren"};
+                "Lokale Sprachengine auswählen", "Deutsche Offline-Stimme auswählen", "Thorsten einrichten / aktivieren",
+                "Story-Zone: Pokopia / Weitere Spiele (unteres Drittel)"};
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Sprachausgabe")
                 .setItems(choices, (d, which) -> {
@@ -415,9 +422,23 @@ public class MainActivity extends AppCompatActivity {
                         showStatus("Sprechtempo auf 1,0× gesetzt", true);
                     } else if (which == 4) showEnginePicker();
                     else if (which == 5) showVoicePicker();
+                    else if (which == 6) showGameProfilePicker();
                     else setupThorsten();
                 }).setNegativeButton("Schließen", null).create();
         showSpeechDialog(dialog);
+    }
+
+    private void showGameProfilePicker() {
+        String[] choices = {"Pokopia (Standard)",
+                "Weitere Spiele – Sprechblasen im unteren Drittel (z. B. Zelda Ocarina of Time)"};
+        int checked = gameProfile == GameProfile.GENERIC_LOWER_THIRD ? 1 : 0;
+        showSpeechDialog(new AlertDialog.Builder(this).setTitle("Story-Erkennungsprofil")
+                .setSingleChoiceItems(choices, checked, (dialog, which) -> {
+                    gameProfile = which == 1 ? GameProfile.GENERIC_LOWER_THIRD : GameProfile.POKOPIA;
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                            .putString(KEY_GAME_PROFILE, which == 1 ? "generic" : "pokopia").apply();
+                    dialog.dismiss();
+                }).setNegativeButton("Schließen", null).create());
     }
 
     private void showSpeechDialog(AlertDialog dialog) {
@@ -768,8 +789,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String detectedSpeaker = detectSpeaker(result, storyLines, frameWidth, frameHeight);
-        // Graue Welt-/Menüflächen sind ohne zugehöriges Namensschild kein Tierdialog.
-        if (!BubbleAppearance.isCharacterLabel(detectedSpeaker)) storyLines.removeAll(grayLines);
+        // Im POKOPIA-Profil sind graue Welt-/Menüflächen ohne zugehöriges Namenschild kein Tierdialog.
+        if (gameProfile.grayNeedsSpeakerLabel()
+                && !BubbleAppearance.isCharacterLabel(detectedSpeaker)) storyLines.removeAll(grayLines);
         if (detectedSpeaker != null) {
             String labelKey = normalize(detectedSpeaker);
             storyLines.removeIf(line -> line.normalized.equals(labelKey));
@@ -1110,7 +1132,8 @@ public class MainActivity extends AppCompatActivity {
     private boolean isInStoryRegion(Rect box, int frameWidth, int frameHeight) {
         if (box == null) return false;
         float centerX = box.centerX() / (float) frameWidth;
-        return BubbleAppearance.inDialogueRegion(centerX, box.centerY() / (float) frameHeight);
+        float centerY = box.centerY() / (float) frameHeight;
+        return gameProfile.inZone(centerX, centerY);
     }
 
 

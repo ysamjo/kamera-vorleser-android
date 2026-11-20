@@ -1,5 +1,38 @@
 # Umsetzung und Validierung
 
+## 20.11.2026 · Spielprofile – Erkennung für andere Spiele mit Sprechblasen im unteren Drittel (1.7 / Code 15)
+
+Die Story-Erkennung wurde auf weitere Spiele erweitert, in denen Sprechblasen im
+unteren Drittel erscheinen (Beispiel Zelda Ocarina of Time).
+
+- Neue Android-freie Klasse `GameProfile`:
+  - `POKOPIA` (Standard): Literale wie `BubbleAppearance.inDialogueRegion`
+    (Story-Zone cx ∈ [0.21, 0.79], cy ∈ [0.74, 0.98]). Verhalten unverändert.
+  - `GENERIC_LOWER_THIRD`: Story-Zone cx ∈ [0.15, 0.85], cy ∈ [0.55, 0.98]
+    (ungefähr unteres Drittel, kann bei Blackbars/Displayinsets nachjustiert werden);
+    `grayNeedsSpeakerLabel() == false` — Graue Sprechblasen ohne Namenschild werden
+    zugelassen. Hud/Menü-Überlappungen durch die vorhandenen Overlap-Regeln in
+    `handleRecognizedText` weiter gelockert.
+- `MainActivity`: Story-Zone kommt nun aus `gameProfile.inZone(...)`; der graue Block wird
+  nur dann angesprochen, wenn `gameProfile.grayNeedsSpeakerLabel()` ist.
+- Einstellung **Story-Zone: Pokopia / Weitere Spiele (unteres Drittel)** unter
+  Sprachausgabe (`gameProfileV1` in `KameraVorleserPrefs`, Werte `pokopia`/`generic`).
+- Lag: Änderung wirkt nur auf `isInStoryRegion`-seitig; OCR/TTS-Pfad unverändert.
+  Die Langameldung des Nutzers ist als offenes Problem hinterlegt (KAV-05 erfasst die
+  Reste der Lag-Messungen).
+- Unit-Tests: `GameProfileTest` (Zone-Grenzen, unschwebender Inhalt: GENERIC-Zone
+  enthält die POKOPIA-Zone, Rule-Switch). Ausgeführt mit JUnit 4.13.2: 13 Tests, 0 Fehler
+  (mit `BubbleAppearanceTest`).
+- Definition of Done: Verhalten dokumentiert (VERBESSERUNGSPLAN/VALIDIERUNG); `GameProfile`
+  Android-frei und getestet (13/13 Unit-Tests); lokaler JDK-21-Compile-Check
+  (kein lokales Android-SDK auf diesem Rechner, vollständiger Build auf Mac per Repo-Zweig).
+
+**Gerätetest:** Aufnahme von Zelda Ocarina of Time (Blasen im unteren Drittel) auf Pixel 10 Pro:
+Lesen im unteren Drittel prüfen, HUD-Elemente im unteren Bereich bleiben still.
+Status: offen (keine gerade verfügbare Aufnahme; PATH-Generator liefert nur Pokopia).
+
+**Nicht belegt:** Lag-Messung bei echtem Spiel; Lesbarkeit neuer Spieltexte ohne Aufnahme.
+
 ## 09.11.2026 · Kürzere Wartezeit bis zum ersten Ton (1.6.7 / Code 14)
 
 Nach der Texterkennung blieben drei vermeidbare Posten vor dem hörbaren Start:

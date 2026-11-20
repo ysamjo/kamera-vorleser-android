@@ -31,6 +31,18 @@ Instrumentation-Tests. KAV-15: CI erfolgreich (Code-Stand `7a94ada`), Details si
 Häkchen kennzeichnen den jeweiligen Umsetzungsschritt, nicht die vollständige
 Geräteakzeptanz der Aufgabe. Alle Grenzen stehen in [VALIDIERUNG.md](VALIDIERUNG.md).
 
+**Umsetzung 20.11.2026 (KAV-17):** Neue Android-freie Klasse `GameProfile` mit
+zwei Profilen: `POKOPIA` (Literale wie `BubbleAppearance.inDialogueRegion` – Verhalten
+bleibt unverändert) und `GENERIC_LOWER_THIRD` (Story-Zone cx ∈ [0.15, 0.85],
+cy ∈ [0.55, 0.98]; `grayNeedsSpeakerLabel() == false`, siehe Akzeptanz unten).
+Story-Zone kommt nun aus `gameProfile.inZone(...)` im `isInStoryRegion`-Pfad.
+Einstellung **Story-Zone: Pokopia / Weitere Spiele (unteres Drittel)** unter
+Sprachausgabe (`gameProfileV1` in `KameraVorleserPrefs`, Werte `pokopia`/`generic`).
+Akzeptanz: `GameProfileTest` (Zone-Grenzen, unschwebender Inhalt: GENERIC-Zone enthält
+die POKOPIA-Zone) grün. Gerätetest mit Zelda-Ocarina-of-Time-Aufnahme: Lesen im unteren
+Drittel, HUD-Elemente im unteren Bereich bleiben still (negatives Fixture wie in
+KAV-09/14 konservativ prüfen). Details siehe [VALIDIERUNG.md](VALIDIERUNG.md).
+
 ## Zielbild
 
 Der Vorleser soll deutsche Pokopia-Dialoge im Kamerabild **zügig, korrekt, in der richtigen Reihenfolge und nur einmal pro logischem Dialog** erkennen und mit der passenden Stimme ausgeben. Die App soll vollständig offline verwendbar bleiben und von Android-API 23 bis zur aktuellen Ziel-API zuverlässig funktionieren.
@@ -254,6 +266,22 @@ SettingsRepository.java    Persistente App-Einstellungen
 - [ ] Auf mindestens einem langsamen und einem schnellen Android-Gerät messen.
 
 **Akzeptanz:** Falsch-positive/fehlende Vorlesungen lassen sich anhand lokaler Diagnosedaten reproduzieren, ohne die Offline-Eigenschaft zu verlieren.
+
+#### KAV-17 · Story-Zone per Gameprofile generalisieren – P2 · S
+
+**Fundstellen:** `GameProfile.java`, `MainActivity.java` (`isInStoryRegion`, gray-Regel).
+
+- [x] `GameProfile` Android-freie Klasse: `POKOPIA` (Literale wie `BubbleAppearance.inDialogueRegion`)
+  und `GENERIC_LOWER_THIRD` (Story-Zone cx ∈ [0.15, 0.85], cy ∈ [0.55, 0.98]; `grayNeedsSpeakerLabel() == false`).
+- [x] `isInStoryRegion` → `gameProfile.inZone(...)`; POKOPIA-Verhalten unverändert.
+- [x] Einstellung "Story-Zone: Pokopia / Weitere Spiele (unteres Drittel)" im Sprachausgabe-Menü
+  (`gameProfileV1`: `pokopia`/`generic`).
+- [ ] Gerätetest mit Zelda-Ocarina-of-Time-Aufnahme: Lesen im unteren Drittel, HUD-Elemente im
+  unteren Bereich bleiben still (negatives Fixture wie in KAV-09/14 konservativ prüfen).
+- [ ] Lag-Meldung des Nutzers: Einrichtung eines Messpfads (bereitsstehendes KAV-05 erfasst).
+
+**Akzeptanz:** `GameProfileTest` grün (4 Tests); Zeilen in der GENERIC-Zone werden lesbar,
+bekannte HUD-Überlappungen verbleiben still.
 
 ## Abhängigkeiten und empfohlene Reihenfolge
 
