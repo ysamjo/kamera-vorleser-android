@@ -115,13 +115,19 @@ Die Aufwände sind **grobe Größenordnungen** für die Umsetzung, keine Zusage.
 
 #### KAV-05 · OCR-Nachverarbeitung von UI-Thread trennen – P1 · M
 
-**Fundstellen:** `MainActivity.java:416–580`, `805–881`, `1226–1242`.
+**Fundstellen:** `MainActivity.java:716–905`.
 
-- [ ] Verifizieren, auf welchem Executor ML Kit den Success-Callback ausführt; CPU-intensive Weiterverarbeitung explizit auf einen Worker legen.
-- [ ] Analysezustand seriell halten (z. B. ein dedizierter Executor), um Race Conditions zu vermeiden.
-- [ ] Nur View-Zugriffe und notwendige UI-Zustandsänderungen auf dem Main Thread ausführen.
+- [x] `analyze()` auf `analysisExecutor` (SingleThreadExecutor) verlagern: `bubbleSurface`-Farbprüfungen
+  pro Zeile, Sprecherkandidaten, Assembling, Confidence. Rückgabe: `RecognitionAnalysis`.
+- [ ] Verifizieren, auf welchem Executor ML Kit den Success-Callback ausführt (weiterhin bestätigen,
+  getrennt vom Worker-Move).
+- [x] Analysezustand seriell halten (`analysisExecutor`).
+- [x] Nur View-Zugriffe und notwendige UI-Zustandsänderungen auf dem Main Thread ausführen
+  (`applyAnalysis`); TTS/Historie/Queue bleiben Main-Thread-gebunden (`SpeechQueue`).
 - [ ] Zeitmessung für Frame-Eingang, OCR-Ende, Dialogentscheidung und TTS-Start ergänzen.
-- [ ] `ImageProxy` erst schließen, nachdem bildabhängige Farberkennung beendet ist.
+  (Teilerst: Worker-Timing-Log `OCR-Postverarbeitung X ms`.)
+- [x] `ImageProxy` erst schließen, nachdem bildabhängige Farberkennung beendet ist
+  (`FrameRelease` schließt auf Main in `applyAnalysis`).
 
 **Akzeptanz:** Keine spürbaren UI-Hänger bei längeren OCR-Texten; Zustandsupdates bleiben in korrekter Reihenfolge; Kamera-Pipeline verarbeitet keine veralteten Frames nach Neustart.
 

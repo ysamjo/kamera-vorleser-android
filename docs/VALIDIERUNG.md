@@ -1,5 +1,26 @@
 # Umsetzung und Validierung
 
+## 20.11.2026 · OCR-Nachverarbeitung auf Worker (1.8 / Code 16)
+
+`handleRecognizedText` wurde zerlegt, um die OCR-Postverarbeitung von Main Thread zu trennen:
+
+- **Worker (`analysisExecutor`, SingleThreadExecutor):** `analyze()` — YUV→RGB-Sampling,
+  `bubbleSurface`-Farbprüfungen pro Zeile, Sprecherkandidaten, Assembling, Confidence.
+  Rückgabe: `RecognitionAnalysis`.
+- **Main:** `applyAnalysis()` — `SpeakerLabels.Tracker`-Observe, UI-Updates
+  (`speakerText`/`recognizedText`/`confidenceText`/Status), Stability, Historie,
+  TTS-Übergabe (`submitDialogue` → `speak` → `textToSpeech.speak`).
+- **Worker-Timing-Log:** `OCR-Postverarbeitung X ms` (Logtag `PokopiaTts`).
+- **Frame-Lebenszyklus:** `FrameRelease` schließt nach Abschluss von `applyAnalysis`;
+  bildabhängige Prüfungen laufen vor der Freigabe (KAV-05 DoA).
+
+Akzeptanz (KAV-05): Keine spürbaren UI-Hänger bei längeren OCR-Texten; Zustandsupdates
+in korrekter Reihenfolge; keine veralteten Frame-Ergebnisse nach Neustart.
+Gerätetest auf Pixel 10 Pro: Analysezeit per `OCR-Postverarbeitung X ms` dokumentieren,
+Reaktionszeit ("Frame → last stable text → onStart") dokumentieren, vergleichbar mit
+Referenzmessungen. Definition of Done: Build (Mac/JDK 21)
+`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug` sauber; `git diff --check` OK.
+
 ## 20.11.2026 · Spielprofile – Erkennung für andere Spiele mit Sprechblasen im unteren Drittel (1.7 / Code 15)
 
 Die Story-Erkennung wurde auf weitere Spiele erweitert, in denen Sprechblasen im
