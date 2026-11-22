@@ -21,8 +21,9 @@ final class CloudSpeechPlayer {
         void finished(String id, boolean failed, boolean partiallyPlayed);
     }
     private static final class Pending {
-        final String id, fishKey, googleKey;
+        final String id, fishKey, googleKey, localSource;
         final CloudSpeechRequest request;
+        final File localFile;
         final float volume;
         final long queuedAt = SystemClock.elapsedRealtime();
         final CloudSpeechClient.Job job = new CloudSpeechClient.Job();
@@ -30,7 +31,11 @@ final class CloudSpeechPlayer {
         PcmSpeechOutput fishOutput;
         Pending(String id, CloudSpeechRequest request, String fishKey, String googleKey, float volume) {
             this.id = id; this.request = request; this.fishKey = fishKey; this.googleKey = googleKey;
-            this.volume = volume;
+            this.localFile = null; this.localSource = null; this.volume = volume;
+        }
+        Pending(String id, File localFile, String localSource, float volume) {
+            this.id = id; this.request = null; this.fishKey = ""; this.googleKey = "";
+            this.localFile = localFile; this.localSource = localSource; this.volume = volume;
         }
     }
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -40,14 +45,18 @@ final class CloudSpeechPlayer {
     private final ExecutorService aborter = Executors.newSingleThreadExecutor();
     private final ArrayDeque<Pending> pending = new ArrayDeque<>();
     private final File directory;
+    private final SpeechAudioCache speechCache;
     private final Listener listener;
     private Pending active;
     private MediaPlayer player;
     private File audioFile;
+    private boolean deleteAudioFileOnRelease;
     private boolean closed;
 
     CloudSpeechPlayer(Context context, Listener listener) {
         directory = new File(context.getCacheDir(), "cloud-tts");
+        speechCache = new SpeechAudioCache(new File(context.getFilesDir(), "tts-cache"),
+                SpeechAudioCache.DEFAULT_MAX_BYTES);
         this.listener = listener;
         // Ein Prozessabbruch kann temporäre MP3-Dateien hinterlassen; kein Langzeit-Audioarchiv.
         File[] old = directory.listFiles();
@@ -61,10 +70,24 @@ final class CloudSpeechPlayer {
         return true;
     }
 
+    boolean speakLocalFile(String id, File localFile, String sourceLabel, float volume) {
+        if (closed || localFile == null || !localFile.isFile()
+                || pending.size() + (active == null ? 0 : 1) >= 2) {
+            return false;
+        }
+        pending.add(new Pending(id, localFile, sourceLabel == null ? "Lokales Audio" : sourceLabel, volume));
+        next();
+        return true;
+    }
+
     private void next() {
         if (active != null || closed || pending.isEmpty()) return;
         Pending item = pending.remove();
         active = item;
+        if (item.localFile != null) {
+            play(item, item.localFile, item.localSource, false);
+            return;
+        }
         listener.status(item.id, "Erzeuge Sprache · Fish Audio → Google-Backup");
         item.fishOutput = new PcmSpeechOutput(item.volume, () -> item.job.cancelled,
                 () -> {
@@ -78,10 +101,24 @@ final class CloudSpeechPlayer {
             File file = null;
             long startedAt = SystemClock.elapsedRealtime();
             try {
+                File cached = speechCache.lookup(item.request);
+                if (cached != null) {
+                    if (item.job.cancelled) return;
+                    Log.d("PokopiaTts", "Lokaler Cache · Treffer nach "
+                            + (SystemClock.elapsedRealtime() - item.queuedAt) + " ms");
+                    main.post(() -> play(item, cached, "Lokaler Cache", false));
+                    return;
+                }
                 byte[] audio;
-                try (PcmSpeechOutput output = item.fishOutput) {
+                SpeechAudioCache.PcmRecorder recorder = speechCache.openFishRecorder(item.request);
+                try (PcmSpeechOutput output = item.fishOutput;
+                     SpeechAudioCache.PcmRecorder teeRecorder = recorder) {
                     audio = client.playOrSynthesize(item.request, item.fishKey, item.googleKey, item.job, () -> {
-                        client.streamFish(item.request, item.fishKey, item.job, output);
+                        client.streamFish(item.request, item.fishKey, item.job, (samples, count) -> {
+                            output.write(samples, count);
+                            if (teeRecorder != null) teeRecorder.write(samples, count);
+                        });
+                        if (teeRecorder != null && !item.job.cancelled) teeRecorder.commit();
                         Log.d("PokopiaTts", "Fish Audio · Synthese und Download "
                                 + (SystemClock.elapsedRealtime() - startedAt) + " ms");
                         output.awaitPlaybackEnd();
@@ -96,12 +133,18 @@ final class CloudSpeechPlayer {
                 }
                 Log.d("PokopiaTts", CloudSpeechClient.GOOGLE_BACKUP + " · Synthese und Download "
                         + (SystemClock.elapsedRealtime() - startedAt) + " ms");
+                File cachedMp3 = speechCache.putGoogleMp3(item.request, audio);
+                if (item.job.cancelled) return;
+                if (cachedMp3 != null) {
+                    main.post(() -> play(item, cachedMp3, CloudSpeechClient.GOOGLE_BACKUP, false));
+                    return;
+                }
                 if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Audioordner nicht verfügbar");
                 file = File.createTempFile("speech-", ".mp3", directory);
                 try (FileOutputStream out = new FileOutputStream(file)) { out.write(audio); }
                 if (item.job.cancelled) { file.delete(); return; }
                 File ready = file;
-                main.post(() -> play(item, ready, CloudSpeechClient.GOOGLE_BACKUP));
+                main.post(() -> play(item, ready, CloudSpeechClient.GOOGLE_BACKUP, true));
             } catch (Exception error) {
                 if (file != null) file.delete();
                 main.post(() -> {
@@ -115,9 +158,13 @@ final class CloudSpeechPlayer {
         });
     }
 
-    private void play(Pending item, File file, String provider) {
-        if (closed || active != item || item.job.cancelled) { file.delete(); return; }
+    private void play(Pending item, File file, String provider, boolean deleteOnRelease) {
+        if (closed || active != item || item.job.cancelled) {
+            if (deleteOnRelease) file.delete();
+            return;
+        }
         audioFile = file;
+        deleteAudioFileOnRelease = deleteOnRelease;
         MediaPlayer media = new MediaPlayer();
         player = media;
         try {
@@ -148,7 +195,7 @@ final class CloudSpeechPlayer {
     private void finish(Pending item, boolean failed) {
         release();
         active = null;
-        listener.finished(item.id, failed, failed && item.fishOutput.started());
+        listener.finished(item.id, failed, failed && item.fishOutput != null && item.fishOutput.started());
         next();
     }
 
@@ -158,7 +205,7 @@ final class CloudSpeechPlayer {
         active = null; // Zuerst entwerten, dann Netzwerk und Wiedergabe stoppen.
         if (old != null) {
             old.job.cancel(aborter);
-            old.fishOutput.stop();
+            if (old.fishOutput != null) old.fishOutput.stop();
             if (old.work != null) old.work.cancel(true);
         }
         release();
@@ -172,7 +219,11 @@ final class CloudSpeechPlayer {
             player.release();
             player = null;
         }
-        if (audioFile != null) { audioFile.delete(); audioFile = null; }
+        if (audioFile != null) {
+            if (deleteAudioFileOnRelease) audioFile.delete();
+            audioFile = null;
+            deleteAudioFileOnRelease = false;
+        }
     }
 
     void close() {

@@ -130,6 +130,8 @@ public class MainActivity extends AppCompatActivity {
     private String readableDialogue;
     private final SpeakerLabels.Tracker speakerTracker = new SpeakerLabels.Tracker(NARRATOR);
     private final DialogueStability dialogueStability = new DialogueStability();
+    private final StoryAudioIndex.PrefixStability earlyPrefixStability = new StoryAudioIndex.PrefixStability();
+    private volatile StoryAudioIndex storyAudioIndex = StoryAudioIndex.empty();
     private float speechRate = 1.0f;
     private boolean characterEffects;
     private String cachedSpeaker = "";
@@ -243,6 +245,13 @@ public class MainActivity extends AppCompatActivity {
                 finishSpeech(id, failed, partiallyPlayed);
             }
         });
+        new Thread(() -> {
+            StoryAudioIndex loaded = StoryAudioIndex.load(new java.io.File(getFilesDir(), "story-pack"));
+            if (!destroyed) {
+                storyAudioIndex = loaded;
+                android.util.Log.d("PokopiaTts", "Story-Pack geladen: " + loaded.size() + " Einträge");
+            }
+        }, "StoryPackLoader").start();
 
         // Load sound preference
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -651,6 +660,7 @@ public class MainActivity extends AppCompatActivity {
     private void invalidateAnalysis() {
         analysisGeneration.incrementAndGet();
         dialogueStability.reset();
+        earlyPrefixStability.reset();
         speakerTracker.reset();
         setReadableDialogue(null);
         lastAnalysisAt = 0L;
@@ -787,8 +797,9 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        List<StoryTextAssembler.Line> assembledLines = toAssemblerLines(storyLines);
         String visibleStory = DialogueText.withoutSpeaker(
-                assembleStoryText(storyLines), detectedSpeaker);
+                StoryTextAssembler.assemble(assembledLines), detectedSpeaker);
         if (visibleStory.isBlank()) {
             clearPendingStoryIfStale(now);
             return;
@@ -810,6 +821,7 @@ public class MainActivity extends AppCompatActivity {
 
         if (isNonStoryNotification(normalizedStory) || !TextRules.hasDialogueText(normalizedStory)) {
             dialogueStability.reset();
+            earlyPrefixStability.reset();
             setReadableDialogue(null);
             speakerText.setText("SYSTEMMELDUNG");
             if (ttsReady && speechQueue.size() == 0) showStatus("Ignoriert", true);
@@ -820,6 +832,17 @@ public class MainActivity extends AppCompatActivity {
         boolean stable = dialogueStability.accept(visibleStory, now);
         if (!ttsReady) return;
         boolean idle = speechQueue.size() == 0;
+        if (cloudSpeechEnabled && storyAudioIndex.size() > 0 && !stable && !speakerTracker.waitForName()) {
+            String visibleFirstLine = DialogueText.withoutSpeaker(
+                    StoryTextAssembler.firstLine(assembledLines), detectedSpeaker);
+            if (earlyPrefixStability.accept(visibleFirstLine, now)) {
+                StoryAudioIndex.Match early = storyAudioIndex.matchEarlyPrefix(
+                        currentSpeaker, visibleFirstLine, speakerUncertain);
+                if (early != null && trySpeakStoryPack(early, speakerUncertain, frameStartedAt)) {
+                    return;
+                }
+            }
+        }
         if (!stable || speakerTracker.waitForName()) {
             if (idle) showStatus("Prüfe Dialog …", true);
             return;
@@ -850,6 +873,20 @@ public class MainActivity extends AppCompatActivity {
         if (unread.isBlank()) {
             if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
             return;
+        }
+        if (cloudSpeechEnabled && storyAudioIndex.size() > 0) {
+            StoryAudioIndex.Match full = storyAudioIndex.matchFull(currentSpeaker, visibleStory, speakerUncertain);
+            if (full != null && TextRules.similarEnough(normalize(unread), full.entry.textNorm)) {
+                String effectiveSpeaker = speakerUncertain ? full.entry.speaker : currentSpeaker;
+                if (speechQueue.size() < MAX_QUEUED_UTTERANCES
+                        || !normalize(effectiveSpeaker).equals(cachedSpeaker)) {
+                    if (submitStoryPack(full, effectiveSpeaker)) {
+                        android.util.Log.d("PokopiaTts", "Story-Pack angenommen (Volltext), Frame bis Übergabe "
+                                + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
+                    }
+                }
+                return;
+            }
         }
         if (waitingForCloudRetry(now)) return;
 
@@ -882,8 +919,22 @@ public class MainActivity extends AppCompatActivity {
         String text = readableDialogue;
         if (text == null || !ttsReady || !acceptsFrame(analysisGeneration.get())) return;
         String normalized = normalize(text);
-        if (DialogueHistory.key(currentSpeaker, normalized).equals(speechQueue.firstKey())
-                || waitingForCloudRetry(android.os.SystemClock.elapsedRealtime())) return;
+        if (DialogueHistory.key(currentSpeaker, normalized).equals(speechQueue.firstKey())) return;
+
+        boolean speakerUncertain = normalize(currentSpeaker).equals(normalize(NARRATOR));
+        if (cloudSpeechEnabled && storyAudioIndex.size() > 0) {
+            StoryAudioIndex.Match packMatch = storyAudioIndex.matchFull(currentSpeaker, text, speakerUncertain);
+            if (packMatch != null) {
+                stopSpeech();
+                String effectiveSpeaker = speakerUncertain ? packMatch.entry.speaker : currentSpeaker;
+                if (submitStoryPack(packMatch, effectiveSpeaker)) {
+                    interruptedDialogueKey = null;
+                    android.util.Log.d("PokopiaTts", "Dialog manuell angenommen (Story-Pack)");
+                }
+                return;
+            }
+        }
+        if (waitingForCloudRetry(android.os.SystemClock.elapsedRealtime())) return;
 
         // Ein bewusster Tipp darf bereits gehörten Text sofort erneut vorlesen.
         stopSpeech();
@@ -891,6 +942,54 @@ public class MainActivity extends AppCompatActivity {
             interruptedDialogueKey = null;
             android.util.Log.d("PokopiaTts", "Dialog manuell angenommen");
         }
+    }
+
+    private boolean trySpeakStoryPack(StoryAudioIndex.Match match, boolean speakerUncertain, long frameStartedAt) {
+        String effectiveSpeaker = speakerUncertain ? match.entry.speaker : currentSpeaker;
+        String effectiveKey = DialogueHistory.key(effectiveSpeaker, match.entry.textNorm);
+        boolean idle = speechQueue.size() == 0;
+        if (interruptedDialogueKey != null) {
+            if (DialogueHistory.matches(interruptedDialogueKey, effectiveKey)) {
+                if (idle) showInterruptedSpeech();
+                return true;
+            }
+            interruptedDialogueKey = null;
+        }
+        boolean alreadySpoken = speakerUncertain
+                ? dialogueHistory.wasSpokenAnywhere(match.entry.textNorm)
+                : dialogueHistory.wasSpoken(effectiveSpeaker, match.entry.textNorm);
+        if (alreadySpoken) {
+            if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
+            return true;
+        }
+        boolean awaitsOverlap = speakerUncertain
+                ? dialogueHistory.awaitsOverlappingSpeechAnywhere(match.entry.textNorm)
+                : dialogueHistory.awaitsOverlappingSpeech(effectiveSpeaker, match.entry.textNorm);
+        if (awaitsOverlap) return true;
+        if (speechQueue.size() < MAX_QUEUED_UTTERANCES
+                || !normalize(effectiveSpeaker).equals(cachedSpeaker)) {
+            if (!submitStoryPack(match, effectiveSpeaker)) return false;
+            android.util.Log.d("PokopiaTts", "Story-Pack angenommen (Frühstart), Frame bis Übergabe "
+                    + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
+            return true;
+        }
+        return false;
+    }
+
+    private boolean submitStoryPack(StoryAudioIndex.Match match, String speaker) {
+        if (!ttsReady || paused || !foreground || destroyed || !cloudSpeechEnabled) return false;
+        if (speechQueue.size() > 0 && !normalize(speaker).equals(cachedSpeaker)) stopSpeech();
+        String source = match.earlyPrefix ? "Story-Pack · Frühstart" : "Story-Pack";
+        String historyKey = DialogueHistory.key(speaker, match.entry.textNorm);
+        boolean accepted = speechQueue.submit(historyKey, id ->
+                cloudPlayer.speakLocalFile(id, match.audioFile, source, volume));
+        if (!accepted) return false;
+        cachedSpeaker = normalize(speaker);
+        dialogueHistory.begin(historyKey);
+        speakerTracker.markSent();
+        lastSpokenNormalized = match.entry.textNorm;
+        lastSpokenSpeaker = normalize(speaker);
+        return true;
     }
 
     private void showInterruptedSpeech() {
@@ -1121,6 +1220,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void clearPendingStoryIfStale(long now) {
         if (dialogueStability.absent(now)) {
+            earlyPrefixStability.reset();
             speakerTracker.reset();
             interruptedDialogueKey = null;
             setReadableDialogue(null);
@@ -1473,7 +1573,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private String assembleStoryText(List<OcrLine> lines) {
+    private List<StoryTextAssembler.Line> toAssemblerLines(List<OcrLine> lines) {
         List<StoryTextAssembler.Line> input = new ArrayList<>();
         if (lines != null) for (OcrLine line : lines) {
             if (line != null && line.box != null) {
@@ -1481,7 +1581,7 @@ public class MainActivity extends AppCompatActivity {
                         line.box.top, line.box.right, line.box.bottom));
             }
         }
-        return StoryTextAssembler.assemble(input);
+        return input;
     }
 
     private void loadDialogueHistory(SharedPreferences prefs) {
