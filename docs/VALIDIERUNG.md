@@ -1,5 +1,19 @@
 # Umsetzung und Validierung
 
+## 22.11.2026 · Lokaler Story-Pack-Unterbau, Early-Prefix-Start und Audio-Cache
+
+Für Meilenstein 2 wurde der App-Unterbau für lokale Wiedergabe ohne Cloud-Wartezeit ergänzt:
+
+- **`StoryAudioIndex` + `StoryTextAssembler.firstLine`:** Lädt ein optionales lokales Pack unter `<filesDir>/story-pack/index.jsonl` asynchron im Hintergrund (mit Schutz gegen fehlende Audiodateien und Pfad-Traversal). Bietet exaktes/unscharfes Volltext-Matching sowie eindeutiges Early-Prefix-Matching auf Zeile 1 (mindestens 25 Zeichen oder 4 Wörter, zweifache Bestätigung via `PrefixStability`). Bei einem Frühstart trägt `MainActivity` den vollständigen Zieltext des Pack-Eintrags in `DialogueHistory` ein, damit das Fertigtippen von Zeile 2/3 keine zweite Sprachausgabe auslöst.
+- **`SpeechAudioCache` + `CloudSpeechPlayer`:** Persistenter lokaler LRU-Cache unter `<filesDir>/tts-cache` (max. 150 MB). Bei Cache-Treffern oder Story-Pack-Dateien spielt `CloudSpeechPlayer` direkt lokal über `MediaPlayer` ab, ohne temporäre Cache-/Pack-Dateien bei `release()` zu löschen. Live-Fish-Streams werden parallel verlustfrei als 24-kHz-Mono-WAV mitgeschnitten und erst nach vollständigem Empfang atomar gespeichert; abgebrochene Streams verwerfen ihre temporäre Datei. Google-Backup-MP3s werden ebenfalls gecacht. Der explizit gewählte Offline-TTS-Modus (`!cloudSpeechEnabled`) bleibt unverändert.
+
+**Verifiziert per JVM-Unit-Tests (127 Tests, 0 Fehler/Skips):**
+- `StoryAudioIndexTest` (6 Tests): JSONL-Parsing mit Umlauten/Escapes, Path-Traversal- und Fehlpfad-Abwehr, Volltext-/Fuzzy-Treffer, Early-Prefix-Qualifikation und Kollisionsschutz, Zusammenspiel mit `DialogueHistory` sowie `PrefixStability`.
+- `SpeechAudioCacheTest` (5 Tests): deterministische Cache-Keys, Google-MP3-Speicherung und WAV-Priorisierung, gültiger 44-Byte-WAV-Header beim PCM-Mitschnitt, Aufräumen abgebrochener Mitschnitte sowie LRU-Bereinigung.
+- `StoryTextAssemblerTest` (4 Tests, davon 1 neu für `firstLine`).
+
+**Offene Geräteprüfungen (für Meilenstein 3):** Reale `MediaPlayer`-Startlatenz auf dem Pixel, Übertragen eines gerenderten Story-Packs nach `<filesDir>/story-pack/` sowie Praxistest von Early-Prefix-Start und Live-Cache-Wiederholung vor echter Kamera.
+
 ## 09.11.2026 · Kürzere Wartezeit bis zum ersten Ton (1.6.7 / Code 14)
 
 Nach der Texterkennung blieben drei vermeidbare Posten vor dem hörbaren Start:

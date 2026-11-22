@@ -31,4 +31,17 @@ public class StoryTextAssemblerTest {
         assertEquals("", StoryTextAssembler.assemble(null));
         assertEquals("", StoryTextAssembler.assemble(Collections.emptyList()));
     }
+
+    @Test public void extractsFirstVisualRowAcrossPermutations() {
+        List<StoryTextAssembler.Line> lines = new ArrayList<>(Arrays.asList(
+                line("zweiten Zeile.", 0, 42),
+                line("Welt!", 80, 11),
+                line("Hallo", 0, 10)));
+        for (int seed = 0; seed < 20; seed++) {
+            Collections.shuffle(lines, new Random(seed));
+            assertEquals("Hallo Welt!", StoryTextAssembler.firstLine(lines));
+        }
+        assertEquals("", StoryTextAssembler.firstLine(null));
+        assertEquals("", StoryTextAssembler.firstLine(Collections.emptyList()));
+    }
 }
