@@ -1,5 +1,16 @@
 # Umsetzung und Validierung
 
+## 22.11.2026 · Story-Pack-Renderer, Geräte-Push und Startlatenz auf dem Pixel 10 Pro
+
+Für Meilenstein 3 wurden der Offline-/Cloud-Pack-Renderer (`scripts/story-pack/render_pack.py`), das sichere Übertragungsskript (`scripts/story-pack/push-pack.sh`) und der On-Device-Test `LocalPlaybackFastPathTest` ergänzt und auf dem **Pixel 10 Pro** (`adb-5C230DLCH003RC-wFPUab._adb-tls-connect._tcp`) verifiziert:
+
+- **Bereinigtes Folge-1-Pack (`macos-say` + Opus 28 kbps):** Aus `162` rohen OCR-Einträgen wurden `6` Rauscheinträge gefiltert und `7` Duplikate nach Sprecher-Bereinigung zusammengeführt → **`149` Dialoge** (`9.423` Zeichen), belegt **`2,04 MB`** Audio (`2,4 MB` inkl. Index/Manifest).
+- **Gerätetest per `scripts/test-device.sh` (`adb install -r` ohne Deinstallation):**
+  - `LocalPlaybackFastPathTest` (2/2 bestanden in `1,21 s`): **Opus-Startlatenz `71 ms`**, **24-kHz-WAV-Startlatenz `52–54 ms`**; beide Dateien bleiben nach Wiedergabe erhalten.
+  - Gesamte Instrumentation-Suite: `9/12` Tests bestanden (`BundledOcrSmokeTest` 1, `CloudVoiceSettingsTest` 3, `LocalPlaybackFastPathTest` 2, `PcmSpeechOutputTest` 3); die `3` Tests in `LifecycleSmokeTest` wurden wegen gesperrtem Bildschirm (`Assume.assumeTrue("Gerät muss wach und entsperrt sein")`) übersprungen.
+- **Pack-Push & App-Start:** `push-pack.sh` übertrug alle `149` Einträge nach `files/story-pack/` ohne Keystore-Zugriff; beim Kaltstart von `MainActivity` meldete Logcat `Story-Pack geladen: 149 Einträge`.
+- **Offen:** Produktives Rendern eines vollständigen Walkthroughs mit `FISH_API_KEY` (Drama 3) sowie reale Live-Kamera-Abnahme (Early-Prefix-Frühstart + Cache-Wiederholung) direkt vor der Switch 2.
+
 ## 22.11.2026 · Lokaler Story-Pack-Unterbau, Early-Prefix-Start und Audio-Cache
 
 Für Meilenstein 2 wurde der App-Unterbau für lokale Wiedergabe ohne Cloud-Wartezeit ergänzt:

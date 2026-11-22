@@ -43,3 +43,35 @@ python3 scripts/story-pack/extract_script.py \
 ```bash
 python3 -m unittest discover -s scripts/story-pack -v
 ```
+
+## Story-Pack rendern & aufs Gerät übertragen
+
+### 1. Bereinigung & Größe vorab prüfen (ohne API-Aufruf)
+```bash
+python3 scripts/story-pack/render_pack.py \
+  --scripts Archiv/story-pack/domtendo-001/script.jsonl \
+  --out-dir Archiv/story-pack/pack-ep001 \
+  --dry-run
+```
+
+### 2. Kostenlose Vorschau mit macOS-Stimme (`Anna`) als Opus rendern
+```bash
+python3 scripts/story-pack/render_pack.py \
+  --scripts Archiv/story-pack/domtendo-001/script.jsonl \
+  --out-dir Archiv/story-pack/pack-ep001-say \
+  --provider macos-say
+```
+
+### 3. Produktives Pack mit Fish Audio Drama 3 rendern (mehrere Folgen kombinierbar)
+```bash
+FISH_API_KEY="..." python3 scripts/story-pack/render_pack.py \
+  --scripts Archiv/story-pack/domtendo-*/script.jsonl \
+  --out-dir Archiv/story-pack/pack-pokopia \
+  --provider fish
+```
+Bereits gerenderte `audio/<id>.ogg`-Dateien werden bei erneutem Aufruf automatisch übersprungen (Resume).
+
+### 4. Sicher aufs gewählte Testgerät übertragen (`files/story-pack`, ohne Keystore anzufassen)
+```bash
+ANDROID_SERIAL=<ADB-Gerät> ./scripts/story-pack/push-pack.sh Archiv/story-pack/pack-pokopia
+```
