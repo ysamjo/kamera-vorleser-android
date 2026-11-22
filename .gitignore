@@ -13,6 +13,9 @@ captures/
 *.jks
 
 Archiv/*.zip
+Archiv/story-pack/
+__pycache__/
+*.pyc
 
 .DS_Store
 *.drive-timeout-backup
