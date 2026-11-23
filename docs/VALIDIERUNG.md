@@ -1,5 +1,14 @@
 # Umsetzung und Validierung
 
+## 23.11.2026 · 19-Folgen-Story-Pack (Domtendo #1–#19) und Playlist-Batch-Pipeline
+
+Für den Ausbau über mehrere Episoden wurden `scripts/story-pack/extract_script.py` (`--delete-video`, `try...finally`-Cleanup für `frames/`), der resumable Playlist-Runner `scripts/story-pack/extract_playlist.py` sowie `scripts/story-pack/render_pack.py` (Bigram-/Exakt-Deduplizierung, Fish-Audio-Retry/Backoff und `role_counts`) erweitert und mit `21/21` Python-Unit-Tests geprüft:
+
+- **Playlist-Extraktion (Domtendo #1–#19):** Alle `19` Folgen vollständig und mit `0` OCR-Fehlern extrahiert (`Archiv/story-pack/domtendo-001` bis `domtendo-019`); temporäre Frames und heruntergeladene Videos wurden nach Erfolg gelöscht.
+- **Bereinigtes 19-Folgen-Pack (`macos-say` + Opus 28 kbps):** `1.868` Rohdialoge → `58` Rauscheinträge entfernt, `216` Duplikate zusammengeführt → **`1.594` eindeutige Dialoge** (`99.825` Zeichen) über `10` aktive Pokopia-Rollen (`Erzähler / System` 863, `Professor Tangoloss` 438, `Schiggy & Flinke` 78, `Scherox & Handwerker` 60, `Bisasam-Linie` 51, `Driftlon & Geister` 43, `Plinfa & Kleine` 22, `Relaxo & Gemütliche` 19, `Glumanda-Linie` 16, `Schlappchu` 4), belegt **`22,35 MB` Audio** (`23.431.523` Bytes, `26 MB` Paketordner).
+- **Geräteprüfung (`Pixel_10_Pro`, `adb-5C230DLCH003RC-wFPUab._adb-tls-connect._tcp`):** `push-pack.sh` übertrug per `run-as` alle `1.594` Einträge (`index.jsonl` + `audio/`) ohne Keystore-/Deinstallations-Eingriff nach `files/story-pack/`; beim App-Kaltstart bestätigte Logcat `D PokopiaTts: Story-Pack geladen: 1594 Einträge`.
+- **Offene Grenzen:** Ab Folge `#20` (`yrOzR56G3ic`) verlangte YouTube eine anonyme Bot-Prüfung (`Sign in to confirm you're not a bot`), weshalb `#20–#28` ohne Umgehung pausiert wurden (resumable nachholbar über `extract_playlist.py --start 20 --end 28`). Das produktive Fish-Audio-Drama-3-Rendering bleibt mangels `FISH_API_KEY` offen; die akustische Live-Kamera-Abnahme vor der Switch 2 steht weiterhin aus.
+
 ## 22.11.2026 · Story-Pack-Renderer, Geräte-Push und Startlatenz auf dem Pixel 10 Pro
 
 Für Meilenstein 3 wurden der Offline-/Cloud-Pack-Renderer (`scripts/story-pack/render_pack.py`), das sichere Übertragungsskript (`scripts/story-pack/push-pack.sh`) und der On-Device-Test `LocalPlaybackFastPathTest` ergänzt und auf dem **Pixel 10 Pro** (`adb-5C230DLCH003RC-wFPUab._adb-tls-connect._tcp`) verifiziert:

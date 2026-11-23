@@ -39,6 +39,16 @@ def find_video_file(out_dir: Path) -> Path | None:
     return None
 
 
+def cleanup_downloaded_video(video: Path, out_dir: Path, external_video: bool) -> bool:
+    """Löscht eine heruntergeladene Videodatei in out_dir, niemals externe --video-Quellen."""
+    if external_video or not video.is_file():
+        return False
+    if video.resolve().parent != out_dir.resolve():
+        return False
+    video.unlink()
+    return True
+
+
 def download_video(url: str, out_dir: Path) -> Path:
     existing = find_video_file(out_dir)
     meta_path = out_dir / "metadata.json"
@@ -127,6 +137,7 @@ def main() -> int:
     parser.add_argument("--fps", type=float, default=2.0, help="Abtastrate in Frames/s (Standard: 2.0)")
     parser.add_argument("--crop-y-ratio", type=float, default=0.60, help="Oberer Crop-Startanteil (Standard: 0.60)")
     parser.add_argument("--keep-frames", action="store_true", help="Extrahierte PNG-Frames behalten")
+    parser.add_argument("--delete-video", action="store_true", help="Heruntergeladene Videodatei nach erfolgreicher Extraktion löschen")
     parser.add_argument("--skip-download", action="store_true", help="Vorhandenes Video in --out-dir verwenden")
     parser.add_argument("--max-seconds", type=float, default=None, help="Optional nur erste N Sekunden verarbeiten")
     parser.add_argument("--ocr-bin", "--vision-bin", dest="ocr_bin", type=Path, default=DEFAULT_BIN, help="Pfad zur kompilierten frame-ocr-Binary")
@@ -150,71 +161,76 @@ def main() -> int:
     print(f"Video-Auflösung: {width}x{height}", flush=True)
 
     frames_dir = out_dir / "frames"
-    extract_frames(
-        video=video,
-        frames_dir=frames_dir,
-        width=width,
-        height=height,
-        crop_y_ratio=args.crop_y_ratio,
-        fps=args.fps,
-        max_seconds=args.max_seconds,
-    )
-
-    ocr_bin = ensure_vision_binary(args.ocr_bin)
-    raw_jsonl = out_dir / "raw_ocr.jsonl"
-    ocr_proc = run_cmd([
-        str(ocr_bin),
-        "--frames-dir", str(frames_dir),
-        "--full-width", str(width),
-        "--full-height", str(height),
-        "--crop-y-ratio", str(args.crop_y_ratio),
-        "--fps", str(args.fps),
-        "--out", str(raw_jsonl),
-    ], capture=True)
-
-    stats = None
-    stats_lines = [line for line in (ocr_proc.stderr or "").splitlines() if line.strip()]
-    for line in stats_lines:
-        try:
-            candidate = json.loads(line)
-            if isinstance(candidate, dict) and "total_frames" in candidate:
-                stats = candidate
-                continue
-        except json.JSONDecodeError:
-            pass
-        print("OCR-Hinweis:", line, file=sys.stderr)
-    if stats is not None:
-        (out_dir / "ocr_stats.json").write_text(
-            json.dumps(stats, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        print("OCR-Statistik:", stats, flush=True)
-
-    title = "Pokopia Story-Pack Extraktion"
-    meta_path = out_dir / "metadata.json"
-    if meta_path.is_file():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            if meta.get("title"):
-                title = f"Pokopia Story-Pack · {meta['title']}"
-        except json.JSONDecodeError:
-            pass
-
     script_out = out_dir / "script.jsonl"
     report_out = out_dir / "report.md"
-    segments, unique = dialogue_postprocess.process_jsonl(
-        raw_jsonl=raw_jsonl,
-        script_out=script_out,
-        report_out=report_out,
-        stats=stats,
-        title=title,
-    )
-    print(f"Ergebnis: {len(segments)} Segmente -> {len(unique)} eindeutige Dialoge", flush=True)
-    print(f"Skript:  {script_out}", flush=True)
-    print(f"Bericht: {report_out}", flush=True)
+    try:
+        extract_frames(
+            video=video,
+            frames_dir=frames_dir,
+            width=width,
+            height=height,
+            crop_y_ratio=args.crop_y_ratio,
+            fps=args.fps,
+            max_seconds=args.max_seconds,
+        )
 
-    if not args.keep_frames and frames_dir.exists():
-        shutil.rmtree(frames_dir)
+        ocr_bin = ensure_vision_binary(args.ocr_bin)
+        raw_jsonl = out_dir / "raw_ocr.jsonl"
+        ocr_proc = run_cmd([
+            str(ocr_bin),
+            "--frames-dir", str(frames_dir),
+            "--full-width", str(width),
+            "--full-height", str(height),
+            "--crop-y-ratio", str(args.crop_y_ratio),
+            "--fps", str(args.fps),
+            "--out", str(raw_jsonl),
+        ], capture=True)
+
+        stats = None
+        stats_lines = [line for line in (ocr_proc.stderr or "").splitlines() if line.strip()]
+        for line in stats_lines:
+            try:
+                candidate = json.loads(line)
+                if isinstance(candidate, dict) and "total_frames" in candidate:
+                    stats = candidate
+                    continue
+            except json.JSONDecodeError:
+                pass
+            print("OCR-Hinweis:", line, file=sys.stderr)
+        if stats is not None:
+            (out_dir / "ocr_stats.json").write_text(
+                json.dumps(stats, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print("OCR-Statistik:", stats, flush=True)
+
+        title = "Pokopia Story-Pack Extraktion"
+        meta_path = out_dir / "metadata.json"
+        if meta_path.is_file():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                if meta.get("title"):
+                    title = f"Pokopia Story-Pack · {meta['title']}"
+            except json.JSONDecodeError:
+                pass
+
+        segments, unique = dialogue_postprocess.process_jsonl(
+            raw_jsonl=raw_jsonl,
+            script_out=script_out,
+            report_out=report_out,
+            stats=stats,
+            title=title,
+        )
+        print(f"Ergebnis: {len(segments)} Segmente -> {len(unique)} eindeutige Dialoge", flush=True)
+        print(f"Skript:  {script_out}", flush=True)
+        print(f"Bericht: {report_out}", flush=True)
+    finally:
+        if not args.keep_frames and frames_dir.exists():
+            shutil.rmtree(frames_dir)
+
+    if args.delete_video and script_out.is_file() and report_out.is_file():
+        if cleanup_downloaded_video(video, out_dir, external_video=(args.video is not None)):
+            print(f"Video gelöscht: {video}", flush=True)
 
     return 0
 
