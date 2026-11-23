@@ -1,5 +1,14 @@
 # Umsetzung und Validierung
 
+## 23.11.2026 · Produktives 19-Folgen-Story-Pack mit Fish Audio
+
+Mit bereitgestelltem Fish-Audio-Zugang (nur per Umgebungsvariable übergeben, nicht gespeichert) wurden alle `1.594` eindeutigen Dialoge aus Domtendo `#1–#19` in `Archiv/story-pack/pack-pokopia-fish` gerendert:
+
+- **Modell & Umfang:** Im 3-Dialog-Smoke-Test (`--limit 3`) lief `drama-3`; beim Gesamtlauf über `1.594` Dialoge (`99.825` Zeichen, `10` aktive Rollen aus dem `15`-Stimmen-Katalog) griff der automatische HTTP-402-Fallback auf `s2.1-pro-free` (`3` wiederverwendet, `1.591` neu gerendert, `0` Fehler).
+- **Audio-Ausgabe & Stichprobe:** `index.jsonl` und `audio/` umfassen jeweils `1.594` Einträge ohne Temp-Reste (`26,23 MB` Audio / `27.508.155` Bytes, `30 MB` Paketordner); `ffprobe` bestätigte 48-kHz-Opus (`dlg_0001.ogg` `4,00 s`, `dlg_0010.ogg` `8,55 s`, `dlg_1594.ogg` `5,34 s`).
+- **Gerätestatus (`Pixel_10_Pro`):** Zum Abschlusszeitpunkt war `192.168.178.117:5555` per ADB `offline`, daher wurde der Push von `pack-pokopia-fish` übersprungen (auf dem Gerät verblieb zunächst das zuvor geladene `macos-say`-19-Folgen-Pack; Übertragung nach WLAN-ADB-Reconnect über `ANDROID_SERIAL=<ADB-Gerät> ./scripts/story-pack/push-pack.sh Archiv/story-pack/pack-pokopia-fish`).
+- **Verbleibende Grenzen:** Nachreichen der Folgen `#20–#28` nach lösbarer YouTube-Bot-Prüfung, Übertragung von `pack-pokopia-fish` aufs Pixel 10 Pro sowie reale Live-Kamera-/Hörabnahme vor der Switch 2.
+
 ## 23.11.2026 · 19-Folgen-Story-Pack (Domtendo #1–#19) und Playlist-Batch-Pipeline
 
 Für den Ausbau über mehrere Episoden wurden `scripts/story-pack/extract_script.py` (`--delete-video`, `try...finally`-Cleanup für `frames/`), der resumable Playlist-Runner `scripts/story-pack/extract_playlist.py` sowie `scripts/story-pack/render_pack.py` (Bigram-/Exakt-Deduplizierung, Fish-Audio-Retry/Backoff und `role_counts`) erweitert und mit `21/21` Python-Unit-Tests geprüft:
