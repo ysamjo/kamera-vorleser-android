@@ -30,8 +30,17 @@ python3 scripts/story-pack/extract_script.py \
 - `--fps 2.0`: Abtastrate (Standard: 2 Frames/s)
 - `--crop-y-ratio 0.60`: Oberer Crop-Beginn als Anteil der Bildhöhe (Standard: untere 40 %)
 - `--skip-download`: Vorhandenes `video.*` in `--out-dir` direkt weiterverarbeiten
+- `--delete-video`: Heruntergeladenes `video.*` nach erfolgreicher Extraktion löschen (spart Speicherplatz)
 - `--keep-frames`: Temporäre PNG-Frames behalten (für visuelle Fehlersuche)
 - `--video <pfad>`: Lokale Videodatei statt YouTube-URL verwenden
+
+### Komplette Playlist resumable extrahieren
+```bash
+python3 scripts/story-pack/extract_playlist.py \
+  --playlist "https://youtube.com/playlist?list=PLclj7cdNufoy8r0BB58w73kDf3OZjFOW8" \
+  --start 1 --end 28 --delete-video --min-free-gb 1.5
+```
+Bereits vorhandene nicht-leere `script.jsonl`-Ordner werden automatisch übersprungen (`--force` erzwingt Neu-Extraktion, `--dry-run` zeigt nur die Auswahl).
 
 ## Ausgabeformat
 

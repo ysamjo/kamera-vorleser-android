@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import dialogue_postprocess as dp  # noqa: E402
 import render_pack as rp  # noqa: E402
 
 
@@ -139,6 +140,90 @@ class TestRenderPack(unittest.TestCase):
                 "first_line": "Hallo!",
                 "audio": "audio/dlg_0001.ogg",
             }, parsed)
+
+    def test_prepare_entries_fast_dedup_matches_bruteforce(self) -> None:
+        records = [
+            {"speaker": "Erzähler", "text": "Willkommen in Welkwüstia! Komm it mir.", "first_line": "Willkommen in Welkwüstia!", "confidence": 0.90},
+            {"speaker": "Pikachu", "text": "Willkommen in Welkwüstia! Komm mit mir!", "first_line": "Willkommen in Welkwüstia!", "confidence": 0.92},
+            {"speaker": "Erzähler", "text": "Willkommen in Welkwustia! Komm mit mir.", "first_line": "Willkommen in Welkwüstia!", "confidence": 0.96},
+            {"speaker": "Bisasam", "text": "Der Boden ist noch etwas trocken heute.", "first_line": "Der Boden ist noch etwas", "confidence": 0.91},
+            {"speaker": "Bisasam", "text": "Der Boden ist noch etwa trocken heute.", "first_line": "Der Boden ist noch etwa", "confidence": 0.85},
+            {"speaker": "Bisasam", "text": "Der Boden ist noch etwas trocken heute.", "first_line": "Der Boden ist noch etwas", "confidence": 0.95},
+            {"speaker": "Schiggy", "text": "Ab ins Wasser, los gehts sofort!", "first_line": "Ab ins Wasser, los gehts sofort!", "confidence": 0.94},
+            {"speaker": "Evoli", "text": "Ab ins Wasser, los gehts sofort!", "first_line": "Ab ins Wasser, los gehts sofort!", "confidence": 0.94},
+            {"speaker": "Evoli", "text": "Ab ins Wasser, los gehts sofort!", "first_line": "Ab ins Wasser, los gehts sofort!", "confidence": 0.98},
+        ]
+
+        # Referenz-Brute-Force ohne Bigram- oder Exakt-Index
+        expected: list[rp.PackEntry] = []
+        for rec in records:
+            sp = rp.clean_speaker(rec["speaker"])
+            sp_n = dp.normalize(sp)
+            tx = rp.clean_dialogue_text(rec["text"])
+            tx_n = dp.normalize(tx)
+            fl = rp.clean_dialogue_text(rec["first_line"])
+            fl_n = dp.normalize(fl)
+            slot = (dp.map_pokopia_role(sp) or (0,))[0]
+            conf = rec["confidence"]
+            dup = None
+            for ex in expected:
+                if (ex.speaker_norm == sp_n or ex.speaker == dp.NARRATOR or sp == dp.NARRATOR) and (
+                    ex.text_norm == tx_n or dp.similar_enough(ex.text_norm, tx_n)
+                ):
+                    dup = ex
+                    break
+            if dup is not None:
+                if dup.speaker == dp.NARRATOR and sp != dp.NARRATOR:
+                    dup.speaker, dup.speaker_norm, dup.role_slot = sp, sp_n, slot
+                if len(tx_n) > len(dup.text_norm) or (len(tx_n) == len(dup.text_norm) and conf > dup.confidence):
+                    dup.text, dup.text_norm = tx, tx_n
+                    dup.confidence = max(dup.confidence, conf)
+                continue
+            expected.append(rp.PackEntry(
+                id=f"dlg_{len(expected) + 1:04d}",
+                speaker=sp, speaker_norm=sp_n, role_slot=slot,
+                text=tx, text_norm=tx_n, first_line=fl, first_line_norm=fl_n,
+                confidence=conf, surface="BLUE",
+            ))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "script.jsonl"
+            script.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+            entries, stats = rp.prepare_entries([script])
+
+        self.assertEqual([(e.speaker, e.text) for e in expected], [(e.speaker, e.text) for e in entries])
+        self.assertEqual({"Pikachu / Pichu": 1, "Bisasam-Linie": 1, "Schiggy & Flinke": 1, "Evoli & Niedliche": 1}, stats["role_counts"])
+
+    def test_synthesize_fish_pcm_retries_on_429_and_503(self) -> None:
+        entry = rp.PackEntry(
+            id="dlg_0001", speaker="Erzähler", speaker_norm="erzähler", role_slot=0,
+            text="Hallo Pokopia!", text_norm="hallo pokopia",
+            first_line="Hallo Pokopia!", first_line_norm="hallo pokopia",
+            confidence=0.99, surface="BLUE",
+        )
+        responses = [
+            (429, b"rate limited"),
+            (503, b"service unavailable"),
+            (200, b"\x01\x00\x02\x00"),
+        ]
+        sleeps: list[float] = []
+
+        def fake_post(url: str, headers: dict, body: bytes):
+            return responses.pop(0)
+
+        pcm = rp.synthesize_fish_pcm(
+            entry=entry,
+            api_key="test-key",
+            speed=1.0,
+            apply_dict=False,
+            state={"model": "drama-3"},
+            state_lock=threading.Lock(),
+            http_post=fake_post,
+            max_retries=4,
+            sleep_fn=sleeps.append,
+        )
+        self.assertEqual(b"\x01\x00\x02\x00", pcm)
+        self.assertEqual([1.0, 2.0], sleeps)
 
 
 if __name__ == "__main__":

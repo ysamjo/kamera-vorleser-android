@@ -12,8 +12,10 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -21,6 +23,8 @@ from typing import Callable, Optional
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import dialogue_postprocess as dp  # noqa: E402
+
+ROLE_NAMES: dict[int, str] = {slot: label for slot, label, _ in dp.POKOPIA_ROLES}
 
 FISH_ENDPOINT = "https://api.fish.audio/v1/tts"
 FISH_SAMPLE_RATE = 24000
@@ -237,11 +241,27 @@ class PackEntry:
         }
 
 
+def _bigrams(text: str) -> frozenset[str]:
+    if len(text) < 2:
+        return frozenset()
+    return frozenset(text[i:i + 2] for i in range(len(text) - 1))
+
+
+def _is_compatible_speaker(existing: PackEntry, speaker: str, sp_norm: str) -> bool:
+    return (
+        existing.speaker_norm == sp_norm
+        or existing.speaker == dp.NARRATOR
+        or speaker == dp.NARRATOR
+    )
+
+
 def prepare_entries(script_paths: list[Path], limit: Optional[int] = None) -> tuple[list[PackEntry], dict]:
     raw_count = 0
     filtered_noise = 0
     merged_dups = 0
     entries: list[PackEntry] = []
+    entry_bigrams: list[frozenset[str]] = []
+    exact_by_text: dict[str, list[int]] = {}
 
     for script_path in script_paths:
         with script_path.open("r", encoding="utf-8") as fh:
@@ -265,41 +285,65 @@ def prepare_entries(script_paths: list[Path], limit: Optional[int] = None) -> tu
                 role = dp.map_pokopia_role(speaker)
                 slot = role[0] if role else 0
                 surface = str(rec.get("surface", "BLUE"))
+                text_bg = _bigrams(text_norm)
+                text_len = len(text_norm)
 
-                duplicate: Optional[PackEntry] = None
-                for existing in entries:
-                    compatible_speaker = (
-                        existing.speaker_norm == sp_norm
-                        or existing.speaker == dp.NARRATOR
-                        or speaker == dp.NARRATOR
-                    )
-                    if compatible_speaker and (
-                        existing.text_norm == text_norm
-                        or dp.similar_enough(existing.text_norm, text_norm)
-                    ):
-                        duplicate = existing
+                dup_idx: Optional[int] = None
+                for idx in exact_by_text.get(text_norm, ()):
+                    if _is_compatible_speaker(entries[idx], speaker, sp_norm):
+                        dup_idx = idx
                         break
 
-                if duplicate is not None:
+                if dup_idx is None:
+                    for idx, existing in enumerate(entries):
+                        if not _is_compatible_speaker(existing, speaker, sp_norm):
+                            continue
+                        ex_norm = existing.text_norm
+                        ex_len = len(ex_norm)
+                        max_len = ex_len if ex_len >= text_len else text_len
+                        if max_len < 8:
+                            continue
+                        max_dist = max(1, int(max_len * dp.DUPLICATE_MAX_LEVENSHTEIN_RATIO))
+                        if abs(ex_len - text_len) > max_dist:
+                            continue
+                        ex_bg = entry_bigrams[idx]
+                        if len(ex_bg - text_bg) > 2 * max_dist or len(text_bg - ex_bg) > 2 * max_dist:
+                            continue
+                        if dp.similar_enough(ex_norm, text_norm):
+                            dup_idx = idx
+                            break
+
+                if dup_idx is not None:
+                    duplicate = entries[dup_idx]
                     merged_dups += 1
                     # Bevorzuge spezifischen Sprecher statt Erzähler
                     if duplicate.speaker == dp.NARRATOR and speaker != dp.NARRATOR:
                         duplicate.speaker = speaker
                         duplicate.speaker_norm = sp_norm
                         duplicate.role_slot = slot
-                    if len(text_norm) > len(duplicate.text_norm) or (
-                        len(text_norm) == len(duplicate.text_norm) and conf > duplicate.confidence
+                    if text_len > len(duplicate.text_norm) or (
+                        text_len == len(duplicate.text_norm) and conf > duplicate.confidence
                     ):
+                        old_norm = duplicate.text_norm
                         duplicate.text = cleaned_text
                         duplicate.text_norm = text_norm
                         if len(first_norm) >= len(duplicate.first_line_norm):
                             duplicate.first_line = cleaned_first
                             duplicate.first_line_norm = first_norm
                         duplicate.confidence = max(duplicate.confidence, conf)
+                        if old_norm != text_norm:
+                            old_bucket = exact_by_text.get(old_norm)
+                            if old_bucket and dup_idx in old_bucket:
+                                old_bucket.remove(dup_idx)
+                                if not old_bucket:
+                                    del exact_by_text[old_norm]
+                            exact_by_text.setdefault(text_norm, []).append(dup_idx)
+                            entry_bigrams[dup_idx] = text_bg
                     continue
 
+                new_idx = len(entries)
                 entries.append(PackEntry(
-                    id=f"dlg_{len(entries) + 1:04d}",
+                    id=f"dlg_{new_idx + 1:04d}",
                     speaker=speaker,
                     speaker_norm=sp_norm,
                     role_slot=slot,
@@ -310,11 +354,19 @@ def prepare_entries(script_paths: list[Path], limit: Optional[int] = None) -> tu
                     confidence=conf,
                     surface=surface,
                 ))
+                entry_bigrams.append(text_bg)
+                exact_by_text.setdefault(text_norm, []).append(new_idx)
 
     if limit is not None and limit > 0:
         entries = entries[:limit]
     for idx, entry in enumerate(entries, start=1):
         entry.id = f"dlg_{idx:04d}"
+
+    slot_counter = Counter(e.role_slot for e in entries)
+    role_counts = {
+        ROLE_NAMES.get(slot, f"Slot {slot}"): slot_counter[slot]
+        for slot in sorted(slot_counter)
+    }
 
     stats = {
         "raw_count": raw_count,
@@ -322,6 +374,7 @@ def prepare_entries(script_paths: list[Path], limit: Optional[int] = None) -> tu
         "merged_duplicates": merged_dups,
         "final_count": len(entries),
         "total_chars": sum(len(e.text) for e in entries),
+        "role_counts": role_counts,
     }
     return entries, stats
 
@@ -359,29 +412,62 @@ def synthesize_fish_pcm(
     state_lock: threading.Lock,
     allow_free_fallback: bool = True,
     http_post: Callable[[str, dict[str, str], bytes], tuple[int, bytes]] = _default_http_post,
+    max_retries: int = 4,
+    sleep_fn: Callable[[float], None] = time.sleep,
 ) -> bytes:
     payload = json.dumps(build_fish_payload(entry, speed=speed, apply_dict=apply_dict), ensure_ascii=False).encode("utf-8")
-    with state_lock:
-        model = state.get("model", "drama-3")
+    retryable_statuses = {429, 500, 502, 503, 504}
+    last_exc: Optional[BaseException] = None
+    last_status: Optional[int] = None
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json; charset=utf-8",
-        "model": model,
-    }
-    status, body = http_post(FISH_ENDPOINT, headers, payload)
-    if status == 402 and allow_free_fallback and model != "s2.1-pro-free":
+    for attempt in range(max(0, max_retries) + 1):
         with state_lock:
-            state["model"] = "s2.1-pro-free"
-            model = "s2.1-pro-free"
-        headers["model"] = model
-        status, body = http_post(FISH_ENDPOINT, headers, payload)
+            model = state.get("model", "drama-3")
 
-    if status < 200 or status >= 300:
-        raise RuntimeError(f"Fish Audio HTTP {status} für {entry.id}")
-    if not body or (len(body) & 1) != 0:
-        raise RuntimeError(f"Ungültige PCM-Antwort für {entry.id} ({len(body)} Bytes)")
-    return body
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json; charset=utf-8",
+            "model": model,
+        }
+        try:
+            status, body = http_post(FISH_ENDPOINT, headers, payload)
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_exc = exc
+            if attempt < max_retries:
+                sleep_fn(min(16.0, float(2 ** attempt)))
+                continue
+            raise RuntimeError(f"Fish Audio Netzwerkfehler für {entry.id}: {exc}") from exc
+
+        if status == 402 and allow_free_fallback and model != "s2.1-pro-free":
+            with state_lock:
+                state["model"] = "s2.1-pro-free"
+                model = "s2.1-pro-free"
+            headers["model"] = model
+            try:
+                status, body = http_post(FISH_ENDPOINT, headers, payload)
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                last_exc = exc
+                if attempt < max_retries:
+                    sleep_fn(min(16.0, float(2 ** attempt)))
+                    continue
+                raise RuntimeError(f"Fish Audio Netzwerkfehler für {entry.id}: {exc}") from exc
+
+        if status in retryable_statuses:
+            last_status = status
+            if attempt < max_retries:
+                sleep_fn(min(16.0, float(2 ** attempt)))
+                continue
+            raise RuntimeError(f"Fish Audio HTTP {status} für {entry.id}")
+
+        if status < 200 or status >= 300:
+            raise RuntimeError(f"Fish Audio HTTP {status} für {entry.id}")
+        if not body or (len(body) & 1) != 0:
+            raise RuntimeError(f"Ungültige PCM-Antwort für {entry.id} ({len(body)} Bytes)")
+        return body
+
+    if last_exc is not None:
+        raise RuntimeError(f"Fish Audio Netzwerkfehler für {entry.id}: {last_exc}") from last_exc
+    raise RuntimeError(f"Fish Audio HTTP {last_status} für {entry.id}")
 
 
 def encode_pcm_to_opus(pcm_bytes: bytes, target_ogg: Path, bitrate: str) -> None:
@@ -482,6 +568,9 @@ def main() -> int:
         f"{stats['merged_duplicates']} Duplikate zusammengeführt -> {stats['final_count']} Dialoge "
         f"({stats['total_chars']:,} Zeichen, ~{est_sec:.0f} s Audio / ~{est_mb:.2f} MB Opus)"
     )
+    if stats["role_counts"]:
+        role_summary = ", ".join(f"{name}: {cnt}" for name, cnt in stats["role_counts"].items())
+        print(f"Rollenverteilung ({len(stats['role_counts'])} Rollen): {role_summary}")
 
     if args.dry_run:
         return 0
@@ -551,6 +640,7 @@ def main() -> int:
         "rendered_count": rendered_now,
         "skipped_existing": skipped_existing,
         "total_audio_bytes": total_bytes,
+        "role_counts": stats["role_counts"],
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(
