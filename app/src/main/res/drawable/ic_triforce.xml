@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@color/zelda_green_dark"
+        android:pathData="M54,15 L71,50 L37,50 Z M37,52 L54,87 L20,87 Z M71,52 L88,87 L54,87 Z"
+        android:strokeColor="@color/zelda_green_dark"
+        android:strokeWidth="3"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@color/zelda_gold"
+        android:pathData="M54,18 L68,47 L40,47 Z M38,55 L51,84 L25,84 Z M70,55 L83,84 L57,84 Z" />
+    <path
+        android:fillColor="#FFF3B0"
+        android:fillAlpha="0.55"
+        android:pathData="M54,18 L68,47 L62,47 L54,30 Z M38,55 L51,84 L45,84 L38,67 Z M70,55 L83,84 L77,84 L70,67 Z" />
+</vector>

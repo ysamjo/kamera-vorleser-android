@@ -75,12 +75,14 @@
         app:layout_constraintTop_toTopOf="@id/storyTopGuide">
 
         <ImageView
+            android:id="@+id/storyZoneIcon"
             android:layout_width="15dp"
             android:layout_height="15dp"
             android:contentDescription="Story-Erkennung"
             android:src="@drawable/ic_spark" />
 
         <TextView
+            android:id="@+id/storyZoneText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="6dp"
@@ -111,12 +113,14 @@
         app:layout_constraintTop_toTopOf="parent">
 
         <FrameLayout
+            android:id="@+id/appEmblem"
             android:layout_width="44dp"
             android:layout_height="44dp"
             android:background="@drawable/emblem_background"
             android:padding="4dp">
 
             <ImageView
+                android:id="@+id/appIcon"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:contentDescription="Pokopia Story-Vorleser"
@@ -130,16 +134,18 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/appTitleText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:fontFamily="sans-serif-rounded"
                 android:letterSpacing="0.04"
-                android:text="POKOPIA"
+                android:text="@string/app_title_pokopia"
                 android:textColor="@color/gold"
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/appSubtitleText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:fontFamily="sans-serif-rounded"

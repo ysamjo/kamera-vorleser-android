@@ -19,6 +19,7 @@ import android.util.Size;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
@@ -100,7 +101,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView recognizedText;
     private TextView confidenceText;
     private View dialoguePanel;
-    private View readNowHint;
+    private TextView readNowHint;
     private MaterialButton pauseButton;
     private MaterialButton zoomButton;
     private Camera camera;
@@ -127,6 +128,8 @@ public class MainActivity extends AppCompatActivity {
     private final AtomicInteger analysisGeneration = new AtomicInteger();
     private volatile long lastAnalysisAt = 0L;
     private String currentSpeaker = NARRATOR;
+    private ZeldaTheme.Style speakerTheme = ZeldaTheme.Style.NORMAL;
+    private boolean statusIsGood = true;
     private String readableDialogue;
     private final SpeakerLabels.Tracker speakerTracker = new SpeakerLabels.Tracker(NARRATOR);
     private final DialogueStability dialogueStability = new DialogueStability();
@@ -662,6 +665,7 @@ public class MainActivity extends AppCompatActivity {
         dialogueStability.reset();
         earlyPrefixStability.reset();
         speakerTracker.reset();
+        applySpeakerTheme(NARRATOR);
         setReadableDialogue(null);
         lastAnalysisAt = 0L;
     }
@@ -787,6 +791,7 @@ public class MainActivity extends AppCompatActivity {
 
         if (storyLines.isEmpty()) {
             clearPendingStoryIfStale(now);
+            applySpeakerTheme(NARRATOR);
             setReadableDialogue(null);
             speakerText.setText("BEREIT");
             recognizedText.setText("Warte auf Pokopia-Dialog …");
@@ -806,6 +811,7 @@ public class MainActivity extends AppCompatActivity {
         }
         String normalizedStory = normalize(visibleStory);
         currentSpeaker = speakerTracker.observe(visibleStory, detectedSpeaker);
+        applySpeakerTheme(currentSpeaker);
         // Ohne Namensschild ist der Sprecher nicht sicher. Dann darf dieselbe
         // Zeile nicht erneut starten, nur weil sie unter einem anderen Namen liegt.
         boolean speakerUncertain = detectedSpeaker == null
@@ -897,6 +903,69 @@ public class MainActivity extends AppCompatActivity {
             android.util.Log.d("PokopiaTts", "Dialog angenommen, Frame bis Übergabe "
                     + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
         }
+    }
+
+    private void applyStatusColor() {
+        int color = !statusIsGood ? R.color.coral
+                : speakerTheme == ZeldaTheme.Style.ZELDA ? R.color.zelda_green_light : R.color.leaf;
+        statusText.setTextColor(ContextCompat.getColor(this, color));
+    }
+
+    void applySpeakerTheme(String speaker) {
+        ZeldaTheme.Style next = ZeldaTheme.forSpeaker(speaker);
+        if (next == speakerTheme) return;
+        speakerTheme = next;
+        boolean zelda = next == ZeldaTheme.Style.ZELDA;
+        int ink = zelda ? R.color.zelda_ink : R.color.navy_ink;
+        int accent = zelda ? R.color.zelda_gold : R.color.gold;
+        int secondary = zelda ? R.color.zelda_green_light : R.color.sky;
+
+        findViewById(R.id.topPanel).setBackgroundResource(
+                zelda ? R.drawable.hud_background_zelda : R.drawable.hud_background);
+        findViewById(R.id.cameraShade).setBackgroundResource(
+                zelda ? R.drawable.camera_shade_zelda : R.drawable.camera_shade);
+        findViewById(R.id.storyRegion).setBackgroundResource(
+                zelda ? R.drawable.story_region_background_zelda : R.drawable.story_region_background);
+        findViewById(R.id.storyRegionLabel).setBackgroundResource(
+                zelda ? R.drawable.story_label_background_zelda : R.drawable.story_label_background);
+        findViewById(R.id.controlPanel).setBackgroundResource(
+                zelda ? R.drawable.control_panel_background_zelda : R.drawable.control_panel_background);
+        findViewById(R.id.dialogPanel).setBackgroundResource(
+                zelda ? R.drawable.dialog_card_background_zelda : R.drawable.dialog_card_background);
+        dialoguePanel.setForeground(
+                zelda ? getDrawable(R.drawable.dialog_card_action_ripple_zelda)
+                        : getDrawable(R.drawable.dialog_card_action_ripple));
+        findViewById(R.id.statusText).setBackgroundResource(
+                zelda ? R.drawable.status_background_zelda : R.drawable.status_background);
+        findViewById(R.id.appEmblem).setBackgroundResource(
+                zelda ? R.drawable.emblem_background_zelda : R.drawable.emblem_background);
+        ((ImageView) findViewById(R.id.appIcon)).setImageResource(
+                zelda ? R.drawable.ic_triforce : R.drawable.ic_pikachu);
+        ((ImageView) findViewById(R.id.storyZoneIcon)).setColorFilter(getColor(accent));
+        ((TextView) findViewById(R.id.storyZoneText)).setTextColor(getColor(ink));
+        ((TextView) findViewById(R.id.appTitleText)).setText(
+                zelda ? R.string.app_title_hyrule : R.string.app_title_pokopia);
+        ((TextView) findViewById(R.id.appTitleText)).setTextColor(getColor(accent));
+        ((TextView) findViewById(R.id.appSubtitleText)).setTextColor(getColor(secondary));
+        ((TextView) findViewById(R.id.speakerText)).setBackgroundResource(
+                zelda ? R.drawable.speaker_chip_background_zelda : R.drawable.speaker_chip_background);
+        recognizedText.setTextColor(getColor(ink));
+        readNowHint.setTextColor(getColor(ink));
+        confidenceText.setTextColor(getColor(ink));
+
+        for (int id : new int[]{R.id.speechButton, R.id.zoomButton, R.id.pauseButton}) {
+            ((MaterialButton) findViewById(id)).setBackgroundTintList(getColorStateList(accent));
+        }
+        ((MaterialButton) findViewById(R.id.repeatButton)).setBackgroundTintList(
+                getColorStateList(zelda ? R.color.zelda_green : R.color.blue));
+        SeekBar speed = findViewById(R.id.speedSeekBar);
+        speed.setProgressTintList(getColorStateList(accent));
+        speed.setThumbTintList(getColorStateList(accent));
+        SeekBar volume = findViewById(R.id.volumeSeekBar);
+        volume.setProgressTintList(getColorStateList(secondary));
+        volume.setThumbTintList(getColorStateList(secondary));
+        updateSoundsToggleButton(findViewById(R.id.soundsToggleButton));
+        applyStatusColor();
     }
 
     private void setReadableDialogue(String text) {
@@ -1223,6 +1292,7 @@ public class MainActivity extends AppCompatActivity {
             earlyPrefixStability.reset();
             speakerTracker.reset();
             interruptedDialogueKey = null;
+            applySpeakerTheme(NARRATOR);
             setReadableDialogue(null);
         }
     }
@@ -1607,7 +1677,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void showStatus(String message, boolean good) {
         statusText.setText("●  " + message);
-        statusText.setTextColor(ContextCompat.getColor(this, good ? R.color.leaf : R.color.coral));
+        statusIsGood = good;
+        applyStatusColor();
     }
 
     // === Sound Feedback ===
@@ -1634,7 +1705,8 @@ public class MainActivity extends AppCompatActivity {
         if (soundsEnabled) {
             button.setText("EIN");
             button.setIconResource(R.drawable.ic_volume);
-            button.setBackgroundTintList(getColorStateList(R.color.gold));
+            button.setBackgroundTintList(getColorStateList(
+                    speakerTheme == ZeldaTheme.Style.ZELDA ? R.color.zelda_gold : R.color.gold));
         } else {
             button.setText("AUS");
             button.setIconResource(R.drawable.ic_volume_off);
