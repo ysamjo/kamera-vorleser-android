@@ -1,5 +1,15 @@
 # Umsetzung und Validierung
 
+## 24.11.2026 · Vollständige Hauptstory (Domtendo #1–#28) mit Fish Audio
+
+Nach Wegfall der YouTube-Bot-Prüfung wurden die fehlenden Hauptstory-Folgen `#20–#28` nachgezogen und das kombinierte Pack über inhaltsbewusstes Resume (`load_previous_index` / `select_render_todo` in `scripts/story-pack/render_pack.py`) in `Archiv/story-pack/pack-pokopia-fish` erweitert:
+
+- **Vollständige Hauptstory-Extraktion (`#1–#28`):** Alle `28` Hauptstory-Folgen (`Domtendo #1–#28`, bis Story-Ende) mit `0` OCR-Fehlern extrahiert; Videos nach Extraktion gelöscht.
+- **Bereinigter Gesamtkorpus & Inkrementeller Fish-Lauf (`s2.1-pro-free`):** `2.942` Rohdialoge → `77` Rauschen entfernt, `345` Duplikate zusammengeführt → **`2.520` eindeutige Dialoge** (`162.871` Zeichen) über **`13` aktive Pokopia-Rollen** aus dem `15`-Stimmen-Katalog (`Erzähler / System` 1462, `Professor Tangoloss` 559, `Schiggy & Flinke` 165, `Scherox & Handwerker` 68, `DJ Rotom & Technik` 52, `Bisasam-Linie` 51, `Driftlon & Geister` 43, `Onix & Legendäre` 26, `Relaxo & Gemütliche` 25, `Felori & Elegante` 25, `Plinfa & Kleine` 22, `Glumanda-Linie` 16, `Schlappchu` 6). Dabei wurden `1.585` unveränderte `.ogg`-Dateien wiederverwendet und `935` neue bzw. geänderte Einträge gerendert (`0` Fehler, `22/22` Python-Unit-Tests).
+- **Audio-Umfang & Stichprobe:** `2.520` Opus-Dateien ohne Temp-Reste (**`41,45 MB` Audio** / `43.464.007` Bytes, `47 MB` Paketordner); `ffprobe` bestätigte 48-kHz-Opus (`dlg_1600.ogg` `2,88 s`, `dlg_2520.ogg` `6,97 s`).
+- **Geräte-Rollout & Kaltstart (`Pixel_10_Pro`):** `push-pack.sh` übertrug alle `2.520` Einträge per `run-as` nach `files/story-pack/` (`2.520` Indexzeilen + `2.520` `.ogg`-Dateien bestätigt, Keystore/`no_backup` unberührt); beim App-Kaltstart bestätigte Logcat **`D PokopiaTts: Story-Pack geladen: 2520 Einträge`**.
+- **Offene Grenzen:** Postgame-/DLC-Livestreams (`#29–#34`) bleiben optional außen vor; die reale Live-Kamera-/Hörabnahme (Early-Prefix-Frühstart + Cache-Treffer) direkt vor der Switch 2 steht noch aus.
+
 ## 23.11.2026 · Produktives 19-Folgen-Story-Pack mit Fish Audio
 
 Mit bereitgestelltem Fish-Audio-Zugang (nur per Umgebungsvariable übergeben, nicht gespeichert) wurden alle `1.594` eindeutigen Dialoge aus Domtendo `#1–#19` in `Archiv/story-pack/pack-pokopia-fish` gerendert:

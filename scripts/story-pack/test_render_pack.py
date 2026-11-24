@@ -225,6 +225,39 @@ class TestRenderPack(unittest.TestCase):
         self.assertEqual(b"\x01\x00\x02\x00", pcm)
         self.assertEqual([1.0, 2.0], sleeps)
 
+    def test_select_render_todo_rerenders_changed_speaker_or_text(self) -> None:
+        entries = [
+            rp.PackEntry("dlg_0001", "Erzähler", "erzähler", 0, "Unverändert", "unverändert", "Unverändert", "unverändert", 0.99, "BLUE"),
+            rp.PackEntry("dlg_0002", "Pikachu", "pikachu", 1, "Sprecher verbessert", "sprecher verbessert", "Sprecher verbessert", "sprecher verbessert", 0.99, "GRAY"),
+            rp.PackEntry("dlg_0003", "Bisasam", "bisasam", 7, "Text jetzt länger!", "text jetzt länger", "Text jetzt länger!", "text jetzt länger", 0.99, "GRAY"),
+            rp.PackEntry("dlg_0004", "Schiggy", "schiggy", 11, "Ganz neu", "ganz neu", "Ganz neu", "ganz neu", 0.99, "GRAY"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audio_dir = root / "audio"
+            audio_dir.mkdir()
+            for idx in ("dlg_0001", "dlg_0002", "dlg_0003"):
+                (audio_dir / f"{idx}.ogg").write_bytes(b"x" * 250)
+
+            index_path = root / "index.jsonl"
+            index_path.write_text(
+                "\n".join([
+                    json.dumps({"id": "dlg_0001", "speaker": "Erzähler", "text": "Unverändert"}),
+                    json.dumps({"id": "dlg_0002", "speaker": "Erzähler", "text": "Sprecher verbessert"}),
+                    json.dumps({"id": "dlg_0003", "speaker": "Bisasam", "text": "Text jetzt"}),
+                ]) + "\n",
+                encoding="utf-8",
+            )
+            previous = rp.load_previous_index(index_path)
+            todo, skipped = rp.select_render_todo(entries, audio_dir, previous)
+            self.assertEqual(1, skipped)
+            self.assertEqual(["dlg_0002", "dlg_0003", "dlg_0004"], [e.id for e in todo])
+
+            # Bei Crash-Resume ohne index.jsonl bleiben alle gültigen Audios übersprungen
+            todo_crash, skipped_crash = rp.select_render_todo(entries, audio_dir, {})
+            self.assertEqual(3, skipped_crash)
+            self.assertEqual(["dlg_0004"], [e.id for e in todo_crash])
+
 
 if __name__ == "__main__":
     unittest.main()
