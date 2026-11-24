@@ -12,7 +12,6 @@ captures/
 *.keystore
 *.jks
 
-Archiv/*.zip
 Archiv/story-pack/
 __pycache__/
 *.pyc
