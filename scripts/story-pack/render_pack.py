@@ -544,6 +544,47 @@ def write_index_jsonl(entries: list[PackEntry], index_path: Path) -> None:
             fh.write(json.dumps(entry.index_dict(), ensure_ascii=False) + "\n")
 
 
+def load_previous_index(index_path: Path) -> dict[str, tuple[str, str]]:
+    """Liest eine bestehende index.jsonl als id -> (speaker, text) für inhaltsbewusstes Resume."""
+    previous: dict[str, tuple[str, str]] = {}
+    if not index_path.is_file():
+        return previous
+    with index_path.open("r", encoding="utf-8") as fh:
+        for raw_line in fh:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            entry_id = rec.get("id")
+            speaker = rec.get("speaker")
+            text = rec.get("text")
+            if isinstance(entry_id, str) and isinstance(speaker, str) and isinstance(text, str):
+                previous[entry_id] = (speaker, text)
+    return previous
+
+
+def select_render_todo(
+    entries: list[PackEntry],
+    audio_dir: Path,
+    previous_index: dict[str, tuple[str, str]],
+) -> tuple[list[PackEntry], int]:
+    """Wählt neu zu rendernde Einträge aus; unveränderte bestehende Audios werden wiederverwendet."""
+    todo: list[PackEntry] = []
+    skipped_existing = 0
+    for entry in entries:
+        target = audio_dir / f"{entry.id}.ogg"
+        has_valid_audio = target.is_file() and target.stat().st_size > 200
+        unchanged = entry.id not in previous_index or previous_index[entry.id] == (entry.speaker, entry.text)
+        if has_valid_audio and unchanged:
+            skipped_existing += 1
+        else:
+            todo.append(entry)
+    return todo, skipped_existing
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Rendert Pokopia-Dialogskripte zu einem lokalen Opus-Story-Pack.")
     parser.add_argument("--scripts", nargs="+", required=True, type=Path, help="Eine oder mehrere script.jsonl-Dateien")
@@ -586,16 +627,9 @@ def main() -> int:
     workers = args.workers if args.workers and args.workers > 0 else (4 if args.provider == "macos-say" else 2)
     fish_state = {"model": "drama-3"}
     fish_lock = threading.Lock()
-    skipped_existing = 0
     rendered_now = 0
-    todo: list[PackEntry] = []
-
-    for entry in entries:
-        target = audio_dir / f"{entry.id}.ogg"
-        if target.is_file() and target.stat().st_size > 200:
-            skipped_existing += 1
-        else:
-            todo.append(entry)
+    previous_index = load_previous_index(out_dir / "index.jsonl")
+    todo, skipped_existing = select_render_todo(entries, audio_dir, previous_index)
 
     def render_one(entry: PackEntry) -> None:
         target = audio_dir / f"{entry.id}.ogg"
