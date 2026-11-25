@@ -21,8 +21,9 @@ Schwellen, Sprecherprofile und Bediensemantik nur mit gezieltem Regressionstest 
 - Validierungsgrenzen in `docs/VALIDIERUNG.md` pflegen; Unit-Tests ersetzen keine Kamera-/TTS-Gerätetests.
 
 CI: `.github/workflows/android.yml` führt dieselben Prüfungen unter Linux/JDK 21
-aus. Keine Lint-Baseline verwenden, um neue Fehler zu verstecken. Lokale Archive
-liegen unter `Archiv/` und bleiben außerhalb von Git.
+aus. Keine Lint-Baseline verwenden, um neue Fehler zu verstecken. Archive werden ausschließlich auf ZimaOS unter
+`/home/andreas/projects/ysamjo/.archiv-von-mac/kamera-vorleser-android/` gesichert; auf dem Mac werden keine lokalen
+Archive angelegt. Sie bleiben außerhalb von Git.
 
 `PronunciationDictionary` ist reine Textlogik mit Unicode-Wortgrenzen. Im lokalen Modus nur lokale,
 installierte deutsche TTS-Stimmen verwenden. Cloud-Modus: Fish zuerst, nur bei
