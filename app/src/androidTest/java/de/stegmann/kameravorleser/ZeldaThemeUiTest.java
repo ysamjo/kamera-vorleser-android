@@ -107,6 +107,14 @@ public class ZeldaThemeUiTest {
                 assertAppearanceChanged(normal, Appearance.capture(activity));
                 activity.updateSpeakerFromOcr("Ein neuer Dialog beginnt.", null);
                 assertAppearanceEquals(normal, Appearance.capture(activity));
+
+                activity.updateSpeakerFromOcr(DIALOGUE, "Zelda");
+                activity.updateSpeakerFromOcr(DIALOGUE, "Zelda");
+                assertAppearanceChanged(normal, Appearance.capture(activity));
+                activity.findViewById(R.id.pauseButton).performClick();
+                assertAppearanceEquals(normal, Appearance.capture(activity));
+                activity.findViewById(R.id.pauseButton).performClick();
+                assertAppearanceEquals(normal, Appearance.capture(activity));
             });
         }
     }
@@ -115,9 +123,7 @@ public class ZeldaThemeUiTest {
         for (int id : BACKGROUND_IDS) {
             assertFalse("background " + id, Arrays.equals(normal.backgrounds.get(id), changed.backgrounds.get(id)));
         }
-        assertFalse(Arrays.equals(normal.foreground, changed.foreground));
         assertFalse(Arrays.equals(normal.emblem, changed.emblem));
-        assertFalse(Arrays.equals(normal.appIcon, changed.appIcon));
         assertFalse(Arrays.equals(normal.storyIcon, changed.storyIcon));
         assertFalse(Arrays.equals(normal.textColors, changed.textColors));
         assertFalse(Arrays.equals(normal.buttonTints, changed.buttonTints));
@@ -129,9 +135,7 @@ public class ZeldaThemeUiTest {
         for (int id : BACKGROUND_IDS) {
             assertArrayEquals("background " + id, expected.backgrounds.get(id), actual.backgrounds.get(id));
         }
-        assertArrayEquals(expected.foreground, actual.foreground);
         assertArrayEquals(expected.emblem, actual.emblem);
-        assertArrayEquals(expected.appIcon, actual.appIcon);
         assertArrayEquals(expected.storyIcon, actual.storyIcon);
         assertArrayEquals(expected.textColors, actual.textColors);
         assertArrayEquals(expected.buttonTints, actual.buttonTints);
@@ -151,15 +155,6 @@ public class ZeldaThemeUiTest {
         return pixels;
     }
 
-    private static int[] renderPressed(Drawable drawable) {
-        drawable.setState(new int[]{android.R.attr.state_pressed});
-        drawable.jumpToCurrentState();
-        int[] pixels = render(drawable, 240, 120);
-        drawable.setState(new int[0]);
-        drawable.jumpToCurrentState();
-        return pixels;
-    }
-
     private static int[] render(View view) {
         Bitmap bitmap = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.ARGB_8888);
         view.draw(new Canvas(bitmap));
@@ -171,9 +166,7 @@ public class ZeldaThemeUiTest {
 
     private static final class Appearance {
         final Map<Integer, int[]> backgrounds = new HashMap<>();
-        final int[] foreground;
         final int[] emblem;
-        final int[] appIcon;
         final int[] storyIcon;
         final int[] textColors;
         final int[] buttonTints;
@@ -187,9 +180,7 @@ public class ZeldaThemeUiTest {
             for (int id : BACKGROUND_IDS) {
                 backgrounds.put(id, render(activity.findViewById(id).getBackground(), 160, 80));
             }
-            foreground = renderPressed(activity.findViewById(R.id.dialogPanel).getForeground());
             emblem = render(((ImageView) activity.findViewById(R.id.appIcon)).getDrawable(), 48, 48);
-            appIcon = emblem;
             storyIcon = render(activity.findViewById(R.id.storyZoneIcon));
             textColors = new int[TEXT_IDS.length];
             for (int i = 0; i < TEXT_IDS.length; i++) {

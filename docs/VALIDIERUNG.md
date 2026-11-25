@@ -11,10 +11,14 @@ Sprecher wird das normale Pokopia-Design vollständig wiederhergestellt. Layout,
 Kamera, OCR, TTS und Bediensemantik bleiben unverändert.
 
 Drei JVM-Tests prüfen Normalisierung, den stabilen Sprecher sowie den Normalzustand.
-Der UI-Test vergleicht gerenderte Hintergründe und Embleme und prüft Titel, Farben,
-Akzente sowie den Rückwechsel. Die vollständige Debug-/Release-Matrix für APKs,
+Der UI-Test durchläuft denselben produktiven OCR-Sprecherpfad mit kontrollierten
+Sprecherkandidaten. Er vergleicht gerenderte Hintergründe, Embleme und Akzente und
+prüft Titel, Farben, Kontrast, Barrierefreiheit, Einzelabweichung, Bestätigung,
+Wechsel zu Pikachu, neuen Dialog ohne Label sowie den Reset über Pause. Kamera und
+Sprachausgabe werden für den Test isoliert; vorhandene Einstellungen werden
+vollständig wiederhergestellt. Die vollständige Debug-/Release-Matrix für APKs,
 Bundles, Lint und Unit-Tests war erfolgreich: je **130 Unit-Tests** ohne Fehler,
-Errors oder Skips; Lint je **0 Fehler und 60 Warnungen**, ohne neue Baseline oder
+Errors oder Skips; Lint je **0 Fehler und 59 Warnungen**, ohne neue Baseline oder
 Unterdrückung. Die gesamte Instrumentation-Suite bestand auf dem Android-34-Emulator
 mit **13/13 Tests und 0 Skips**. Normalansicht und Zelda-Ansicht wurden dort auch
 visuell geprüft.
@@ -22,7 +26,7 @@ visuell geprüft.
 Der datenerhaltende Rollout auf das bestätigte Pixel 10 Pro steht noch aus, da es
 zum Prüfzeitpunkt nicht per WLAN-ADB erreichbar war. Die Erkennung eines echten
 Zelda-Namensschilds vor laufender Kamera und die subjektive Gestaltungsabnahme sind
-weiterhin offen; der UI-Test ruft den bestätigten Sprecherzustand direkt auf.
+weiterhin offen; der UI-Test ersetzt diese Geräteabnahme nicht.
 
 ## 24.11.2026 · Vollständige Hauptstory (Domtendo #1–#28) mit Fish Audio
 

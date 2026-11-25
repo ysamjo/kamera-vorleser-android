@@ -945,7 +945,10 @@ public class MainActivity extends AppCompatActivity {
                 zelda ? R.drawable.emblem_background_zelda : R.drawable.emblem_background);
         ((ImageView) findViewById(R.id.appIcon)).setImageResource(
                 zelda ? R.drawable.ic_triforce : R.drawable.ic_pikachu);
-        ((ImageView) findViewById(R.id.storyZoneIcon)).setColorFilter(getColor(accent));
+        findViewById(R.id.appIcon).setContentDescription(getString(
+                zelda ? R.string.app_icon_description_hyrule : R.string.app_icon_description_pokopia));
+        ((ImageView) findViewById(R.id.storyZoneIcon)).setColorFilter(
+                getColor(zelda ? R.color.zelda_gold : R.color.navy_ink));
         ((TextView) findViewById(R.id.storyZoneText)).setTextColor(getColor(ink));
         ((TextView) findViewById(R.id.appTitleText)).setText(
                 zelda ? R.string.app_title_hyrule : R.string.app_title_pokopia);

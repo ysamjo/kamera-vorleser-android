@@ -11,7 +11,8 @@
 1.6.8 ein grün-goldenes Hyrule-Design mit Triforce und `HYRULE`-Kopfzeile. Ein
 einzelner OCR-Ausreißer löst keinen Wechsel aus; andere oder fehlende Sprecher
 stellen das normale Pokopia-Design wieder her. Drei JVM- und ein UI-Regressionstest
-sind ergänzt, die vollständige Build-/Lint-/Testmatrix sowie alle 13 Emulator-Tests
+sind ergänzt; der UI-Test deckt den produktiven Sprecherpfad einschließlich
+Pause-Reset ab. Die vollständige Build-/Lint-/Testmatrix sowie alle 13 Emulator-Tests
 bestanden. Pixel-Rollout und echte Kameraabnahme stehen noch aus; Details in
 VALIDIERUNG.md.
 

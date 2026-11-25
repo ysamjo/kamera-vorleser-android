@@ -123,7 +123,7 @@
                 android:id="@+id/appIcon"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:contentDescription="Pokopia Story-Vorleser"
+                android:contentDescription="@string/app_icon_description_pokopia"
                 android:src="@drawable/ic_pikachu" />
         </FrameLayout>
 
