@@ -14,14 +14,16 @@ Drei JVM-Tests prüfen Normalisierung, den stabilen Sprecher sowie den Normalzus
 Der UI-Test durchläuft denselben produktiven OCR-Sprecherpfad mit kontrollierten
 Sprecherkandidaten. Er vergleicht gerenderte Hintergründe, Embleme und Akzente und
 prüft Titel, Farben, Kontrast, Barrierefreiheit, Einzelabweichung, Bestätigung,
-Wechsel zu Pikachu, neuen Dialog ohne Label sowie den Reset über Pause. Kamera und
-Sprachausgabe werden für den Test isoliert; vorhandene Einstellungen werden
-vollständig wiederhergestellt. Die vollständige Debug-/Release-Matrix für APKs,
-Bundles, Lint und Unit-Tests war erfolgreich: je **130 Unit-Tests** ohne Fehler,
-Errors oder Skips; Lint je **0 Fehler und 59 Warnungen**, ohne neue Baseline oder
-Unterdrückung. Die gesamte Instrumentation-Suite bestand auf dem Android-34-Emulator
-mit **13/13 Tests und 0 Skips**. Normalansicht und Zelda-Ansicht wurden dort auch
-visuell geprüft.
+Wechsel zu Pikachu, neuen Dialog ohne Label sowie den Reset über Pause. Cloud-TTS
+und lokale Sprachausgabe werden für den Test isoliert; vorhandene Einstellungen
+werden vollständig wiederhergestellt. Die Kamera darf starten, jedoch laufen
+sämtliche Assertions synchron auf dem Main Thread, sodass asynchron gepostete
+OCR-Ergebnisse nicht zwischen die Messungen gelangen können. Die vollständige
+Debug-/Release-Matrix für APKs, Bundles, Lint und Unit-Tests war erfolgreich: je
+**130 Unit-Tests** ohne Fehler, Errors oder Skips; Lint je **0 Fehler und 59
+Warnungen**, ohne neue Baseline oder Unterdrückung. Die gesamte
+Instrumentation-Suite bestand auf dem Android-34-Emulator mit **13/13 Tests und
+0 Skips**. Normalansicht und Zelda-Ansicht wurden dort auch visuell geprüft.
 
 Der datenerhaltende Rollout auf das bestätigte Pixel 10 Pro steht noch aus, da es
 zum Prüfzeitpunkt nicht per WLAN-ADB erreichbar war. Die Erkennung eines echten
