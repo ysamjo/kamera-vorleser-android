@@ -810,8 +810,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         String normalizedStory = normalize(visibleStory);
-        currentSpeaker = speakerTracker.observe(visibleStory, detectedSpeaker);
-        applySpeakerTheme(currentSpeaker);
+        updateSpeakerFromOcr(visibleStory, detectedSpeaker);
         // Ohne Namensschild ist der Sprecher nicht sicher. Dann darf dieselbe
         // Zeile nicht erneut starten, nur weil sie unter einem anderen Namen liegt.
         boolean speakerUncertain = detectedSpeaker == null
@@ -909,6 +908,11 @@ public class MainActivity extends AppCompatActivity {
         int color = !statusIsGood ? R.color.coral
                 : speakerTheme == ZeldaTheme.Style.ZELDA ? R.color.zelda_green_light : R.color.leaf;
         statusText.setTextColor(ContextCompat.getColor(this, color));
+    }
+
+    void updateSpeakerFromOcr(String visibleStory, String detectedSpeaker) {
+        currentSpeaker = speakerTracker.observe(visibleStory, detectedSpeaker);
+        applySpeakerTheme(currentSpeaker);
     }
 
     void applySpeakerTheme(String speaker) {

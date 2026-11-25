@@ -1,72 +1,144 @@
 package de.stegmann.kameravorleser;
 
+import android.Manifest;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
-import android.view.ViewGroup;
+import android.view.View;
 import android.widget.ImageView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import androidx.test.core.app.ActivityScenario;
+import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.rule.GrantPermissionRule;
-import android.Manifest;
+import com.google.android.material.button.MaterialButton;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class ZeldaThemeUiTest {
-    @Rule public GrantPermissionRule camera = GrantPermissionRule.grant(Manifest.permission.CAMERA);
+    private static final int[] BACKGROUND_IDS = {
+            R.id.topPanel, R.id.cameraShade, R.id.storyRegion, R.id.storyRegionLabel,
+            R.id.controlPanel, R.id.dialogPanel, R.id.statusText, R.id.appEmblem,
+            R.id.speakerText
+    };
+    private static final int[] TEXT_IDS = {
+            R.id.appTitleText, R.id.appSubtitleText, R.id.storyZoneText,
+            R.id.recognizedText, R.id.readNowHint, R.id.confidenceText, R.id.speakerText
+    };
+    private static final int[] BUTTON_IDS = {
+            R.id.speechButton, R.id.zoomButton, R.id.pauseButton, R.id.repeatButton
+    };
+    private static final String DIALOGUE = "Hyrule braucht deine Hilfe.";
 
-    @Test public void confirmedZeldaChangesAppearanceAndOtherSpeakerRestoresIt() {
+    @Rule public GrantPermissionRule camera = GrantPermissionRule.grant(Manifest.permission.CAMERA);
+    private SharedPreferences prefs;
+    private Map<String, ?> preferencesBefore;
+
+    @Before public void isolateSpeechFromCameraAndNetwork() {
+        Context context = ApplicationProvider.getApplicationContext();
+        prefs = context.getSharedPreferences("KameraVorleserPrefs", Context.MODE_PRIVATE);
+        preferencesBefore = new HashMap<>(prefs.getAll());
+        prefs.edit().putBoolean("cloudSpeechConfiguredV1", true)
+                .putBoolean("cloudSpeechEnabled", false)
+                .putString("speechEngine", "de.stegmann.kameravorleser.test.missing")
+                .commit();
+    }
+
+    @After public void restorePreferences() {
+        SharedPreferences.Editor editor = prefs.edit();
+        for (String key : prefs.getAll().keySet()) {
+            if (!preferencesBefore.containsKey(key)) editor.remove(key);
+        }
+        for (Map.Entry<String, ?> entry : preferencesBefore.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof String) editor.putString(entry.getKey(), (String) value);
+            else if (value instanceof Boolean) editor.putBoolean(entry.getKey(), (Boolean) value);
+            else if (value instanceof Float) editor.putFloat(entry.getKey(), (Float) value);
+            else if (value instanceof Integer) editor.putInt(entry.getKey(), (Integer) value);
+            else if (value instanceof Long) editor.putLong(entry.getKey(), (Long) value);
+        }
+        editor.commit();
+    }
+
+    @Test public void speakerLifecycleSwitchesThemeOnlyAfterConfirmationAndRestoresIt() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {
-                ViewGroup topPanel = activity.findViewById(R.id.topPanel);
-                ViewGroup title = (ViewGroup) topPanel.getChildAt(1);
-                ImageView emblem = (ImageView) ((ViewGroup) topPanel.getChildAt(0)).getChildAt(0);
-                int[] normalTopPixels = render(topPanel.getBackground(), 160, 80);
-                int[] normalCardPixels = render(activity.findViewById(R.id.dialogPanel).getBackground(), 240, 120);
-                int[] normalEmblemPixels = render(emblem.getDrawable(), 48, 48);
-                int normalTitleColor = ((TextView) title.getChildAt(0)).getCurrentTextColor();
-                String normalTitleText = ((TextView) title.getChildAt(0)).getText().toString();
-                int normalDialogueColor = ((TextView) activity.findViewById(R.id.recognizedText)).getCurrentTextColor();
-                int normalAccent = activity.findViewById(R.id.speechButton).getBackgroundTintList()
-                        .getDefaultColor();
+                Appearance normal = Appearance.capture(activity);
+                assertEquals("POKOPIA", normal.title);
+                assertEquals("Pokopia Story-Vorleser", normal.iconDescription);
 
-                activity.applySpeakerTheme("Zelda");
+                activity.updateSpeakerFromOcr(DIALOGUE, "Pikachu");
+                assertAppearanceEquals(normal, Appearance.capture(activity));
+                activity.updateSpeakerFromOcr(DIALOGUE, "Zelda");
+                assertAppearanceEquals(normal, Appearance.capture(activity));
 
-                assertFalse(java.util.Arrays.equals(normalTopPixels,
-                        render(topPanel.getBackground(), 160, 80)));
-                assertFalse(java.util.Arrays.equals(normalCardPixels,
-                        render(activity.findViewById(R.id.dialogPanel).getBackground(), 240, 120)));
-                assertFalse(java.util.Arrays.equals(normalEmblemPixels,
-                        render(emblem.getDrawable(), 48, 48)));
-                assertEquals("HYRULE", ((TextView) title.getChildAt(0)).getText().toString());
-                assertEquals(activity.getColor(R.color.zelda_gold),
-                        ((TextView) title.getChildAt(0)).getCurrentTextColor());
-                assertEquals(activity.getColor(R.color.zelda_ink),
-                        ((TextView) activity.findViewById(R.id.recognizedText)).getCurrentTextColor());
-                assertEquals(activity.getColor(R.color.zelda_gold),
-                        activity.findViewById(R.id.speechButton).getBackgroundTintList().getDefaultColor());
-                assertEquals(activity.getColor(R.color.zelda_gold),
-                        ((SeekBar) activity.findViewById(R.id.speedSeekBar)).getProgressTintList().getDefaultColor());
+                activity.updateSpeakerFromOcr(DIALOGUE, "Zelda");
+                Appearance zelda = Appearance.capture(activity);
+                assertAppearanceChanged(normal, zelda);
+                assertEquals("HYRULE", zelda.title);
+                assertEquals("Hyrule Story-Vorleser", zelda.iconDescription);
+                assertEquals(activity.getColor(R.color.zelda_gold), zelda.titleColor);
+                assertEquals(activity.getColor(R.color.zelda_ink), zelda.textColors[3]);
+                assertEquals(activity.getColor(R.color.zelda_gold), zelda.buttonTints[0]);
+                assertEquals(activity.getColor(R.color.zelda_gold), zelda.speedTints[0]);
+                assertEquals(activity.getColor(R.color.zelda_gold), zelda.speedTints[1]);
+                int[] chipPixels = render(activity.findViewById(R.id.speakerText).getBackground(), 240, 40);
+                assertEquals(activity.getColor(R.color.zelda_green_dark),
+                        chipPixels[(chipPixels.length / 2) + 120]);
 
-                activity.applySpeakerTheme("Pikachu");
+                activity.updateSpeakerFromOcr(DIALOGUE, "Pikachu");
+                assertAppearanceEquals(zelda, Appearance.capture(activity));
+                activity.updateSpeakerFromOcr(DIALOGUE, "Pikachu");
+                assertAppearanceEquals(normal, Appearance.capture(activity));
 
-                assertArrayEquals(normalTopPixels, render(topPanel.getBackground(), 160, 80));
-                assertArrayEquals(normalCardPixels,
-                        render(activity.findViewById(R.id.dialogPanel).getBackground(), 240, 120));
-                assertArrayEquals(normalEmblemPixels, render(emblem.getDrawable(), 48, 48));
-                assertEquals(normalTitleText, ((TextView) title.getChildAt(0)).getText().toString());
-                assertEquals(normalTitleColor, ((TextView) title.getChildAt(0)).getCurrentTextColor());
-                assertEquals(normalDialogueColor,
-                        ((TextView) activity.findViewById(R.id.recognizedText)).getCurrentTextColor());
-                assertEquals(normalAccent,
-                        activity.findViewById(R.id.speechButton).getBackgroundTintList().getDefaultColor());
+                activity.updateSpeakerFromOcr(DIALOGUE, "Zelda");
+                activity.updateSpeakerFromOcr(DIALOGUE, "Zelda");
+                assertAppearanceChanged(normal, Appearance.capture(activity));
+                activity.updateSpeakerFromOcr("Ein neuer Dialog beginnt.", null);
+                assertAppearanceEquals(normal, Appearance.capture(activity));
             });
         }
+    }
+
+    private static void assertAppearanceChanged(Appearance normal, Appearance changed) {
+        for (int id : BACKGROUND_IDS) {
+            assertFalse("background " + id, Arrays.equals(normal.backgrounds.get(id), changed.backgrounds.get(id)));
+        }
+        assertFalse(Arrays.equals(normal.foreground, changed.foreground));
+        assertFalse(Arrays.equals(normal.emblem, changed.emblem));
+        assertFalse(Arrays.equals(normal.appIcon, changed.appIcon));
+        assertFalse(Arrays.equals(normal.storyIcon, changed.storyIcon));
+        assertFalse(Arrays.equals(normal.textColors, changed.textColors));
+        assertFalse(Arrays.equals(normal.buttonTints, changed.buttonTints));
+        assertFalse(Arrays.equals(normal.speedTints, changed.speedTints));
+        assertFalse(Arrays.equals(normal.volumeTints, changed.volumeTints));
+    }
+
+    private static void assertAppearanceEquals(Appearance expected, Appearance actual) {
+        for (int id : BACKGROUND_IDS) {
+            assertArrayEquals("background " + id, expected.backgrounds.get(id), actual.backgrounds.get(id));
+        }
+        assertArrayEquals(expected.foreground, actual.foreground);
+        assertArrayEquals(expected.emblem, actual.emblem);
+        assertArrayEquals(expected.appIcon, actual.appIcon);
+        assertArrayEquals(expected.storyIcon, actual.storyIcon);
+        assertArrayEquals(expected.textColors, actual.textColors);
+        assertArrayEquals(expected.buttonTints, actual.buttonTints);
+        assertArrayEquals(expected.speedTints, actual.speedTints);
+        assertArrayEquals(expected.volumeTints, actual.volumeTints);
+        assertEquals(expected.title, actual.title);
+        assertEquals(expected.iconDescription, actual.iconDescription);
     }
 
     private static int[] render(Drawable drawable, int width, int height) {
@@ -77,5 +149,71 @@ public class ZeldaThemeUiTest {
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
         bitmap.recycle();
         return pixels;
+    }
+
+    private static int[] renderPressed(Drawable drawable) {
+        drawable.setState(new int[]{android.R.attr.state_pressed});
+        drawable.jumpToCurrentState();
+        int[] pixels = render(drawable, 240, 120);
+        drawable.setState(new int[0]);
+        drawable.jumpToCurrentState();
+        return pixels;
+    }
+
+    private static int[] render(View view) {
+        Bitmap bitmap = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.ARGB_8888);
+        view.draw(new Canvas(bitmap));
+        int[] pixels = new int[view.getWidth() * view.getHeight()];
+        bitmap.getPixels(pixels, 0, view.getWidth(), 0, 0, view.getWidth(), view.getHeight());
+        bitmap.recycle();
+        return pixels;
+    }
+
+    private static final class Appearance {
+        final Map<Integer, int[]> backgrounds = new HashMap<>();
+        final int[] foreground;
+        final int[] emblem;
+        final int[] appIcon;
+        final int[] storyIcon;
+        final int[] textColors;
+        final int[] buttonTints;
+        final int[] speedTints;
+        final int[] volumeTints;
+        final String title;
+        final int titleColor;
+        final String iconDescription;
+
+        Appearance(MainActivity activity) {
+            for (int id : BACKGROUND_IDS) {
+                backgrounds.put(id, render(activity.findViewById(id).getBackground(), 160, 80));
+            }
+            foreground = renderPressed(activity.findViewById(R.id.dialogPanel).getForeground());
+            emblem = render(((ImageView) activity.findViewById(R.id.appIcon)).getDrawable(), 48, 48);
+            appIcon = emblem;
+            storyIcon = render(activity.findViewById(R.id.storyZoneIcon));
+            textColors = new int[TEXT_IDS.length];
+            for (int i = 0; i < TEXT_IDS.length; i++) {
+                textColors[i] = ((TextView) activity.findViewById(TEXT_IDS[i])).getCurrentTextColor();
+            }
+            buttonTints = new int[BUTTON_IDS.length];
+            for (int i = 0; i < BUTTON_IDS.length; i++) {
+                buttonTints[i] = ((MaterialButton) activity.findViewById(BUTTON_IDS[i]))
+                        .getBackgroundTintList().getDefaultColor();
+            }
+            SeekBar speed = activity.findViewById(R.id.speedSeekBar);
+            speedTints = new int[]{speed.getProgressTintList().getDefaultColor(),
+                    speed.getThumbTintList().getDefaultColor()};
+            SeekBar volume = activity.findViewById(R.id.volumeSeekBar);
+            volumeTints = new int[]{volume.getProgressTintList().getDefaultColor(),
+                    volume.getThumbTintList().getDefaultColor()};
+            TextView titleView = activity.findViewById(R.id.appTitleText);
+            title = titleView.getText().toString();
+            titleColor = titleView.getCurrentTextColor();
+            iconDescription = activity.findViewById(R.id.appIcon).getContentDescription().toString();
+        }
+
+        static Appearance capture(MainActivity activity) {
+            return new Appearance(activity);
+        }
     }
 }

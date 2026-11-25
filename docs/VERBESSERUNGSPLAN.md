@@ -1,11 +1,19 @@
 # Verbesserungsplan – Pokopia Story-Vorleser (Android)
 
-**Stand:** 08.10.2026 · **Status:** in Umsetzung · **Basis:** `main` (Initial-Review, Commit `c4c4df4`)
+**Stand:** 25.11.2026 · **Status:** in Umsetzung · **Basis:** `main` (Initial-Review, Commit `c4c4df4`)
 **Geltungsbereich:** Stabilität, OCR-/Dialogqualität, TTS, Bedienbarkeit, Architektur und Qualitätssicherung.
 
 > Aktuelle Umsetzung und Validierungsgrenzen stehen in [VALIDIERUNG.md](VALIDIERUNG.md). Der ursprüngliche Plan folgt. Alle Befunde stammen aus einem statischen Code-Review; Laufzeitfehler und Performanceannahmen müssen auf Geräten bzw. Emulatoren verifiziert werden.
 
 ## Aktueller Umsetzungsstand
+
+**Nutzerauftrag 25.11.2026:** Bei bestätigtem Sprecher `Zelda` zeigt Version
+1.6.8 ein grün-goldenes Hyrule-Design mit Triforce und `HYRULE`-Kopfzeile. Ein
+einzelner OCR-Ausreißer löst keinen Wechsel aus; andere oder fehlende Sprecher
+stellen das normale Pokopia-Design wieder her. Drei JVM- und ein UI-Regressionstest
+sind ergänzt, die vollständige Build-/Lint-/Testmatrix sowie alle 13 Emulator-Tests
+bestanden. Pixel-Rollout und echte Kameraabnahme stehen noch aus; Details in
+VALIDIERUNG.md.
 
 **Nutzerauftrag 04.11.2026:** Untere blaue/graue Sprechblasen gezielt filtern,
 Wiederholungen über gespeicherte Textfenster vermeiden, Erkennungsabstand verkürzen
