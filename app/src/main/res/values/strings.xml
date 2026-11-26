@@ -2,6 +2,10 @@
 <resources>
     <string name="speech_settings">STIMME</string>
     <string name="camera_selection">Kamera und Zoom auswählen</string>
+    <string name="app_title_pokopia">POKOPIA</string>
+    <string name="app_title_hyrule">HYRULE</string>
+    <string name="app_icon_description_pokopia">Pokopia Story-Vorleser</string>
+    <string name="app_icon_description_hyrule">Hyrule Story-Vorleser</string>
     <string name="read_now">Jetzt vorlesen</string>
     <string name="read_interrupted">Unterbrochen · Jetzt vorlesen</string>
 </resources>

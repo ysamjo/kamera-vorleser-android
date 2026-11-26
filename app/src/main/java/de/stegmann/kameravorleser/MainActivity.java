@@ -19,6 +19,7 @@ import android.util.Size;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
@@ -101,7 +102,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView recognizedText;
     private TextView confidenceText;
     private View dialoguePanel;
-    private View readNowHint;
+    private TextView readNowHint;
     private MaterialButton pauseButton;
     private MaterialButton zoomButton;
     private Camera camera;
@@ -129,9 +130,13 @@ public class MainActivity extends AppCompatActivity {
     private final AtomicInteger analysisGeneration = new AtomicInteger();
     private volatile long lastAnalysisAt = 0L;
     private String currentSpeaker = NARRATOR;
+    private ZeldaTheme.Style speakerTheme = ZeldaTheme.Style.NORMAL;
+    private boolean statusIsGood = true;
     private String readableDialogue;
     private final SpeakerLabels.Tracker speakerTracker = new SpeakerLabels.Tracker(NARRATOR);
     private final DialogueStability dialogueStability = new DialogueStability();
+    private final StoryAudioIndex.PrefixStability earlyPrefixStability = new StoryAudioIndex.PrefixStability();
+    private volatile StoryAudioIndex storyAudioIndex = StoryAudioIndex.empty();
     private float speechRate = 1.0f;
     private boolean characterEffects;
     private String cachedSpeaker = "";
@@ -248,6 +253,13 @@ public class MainActivity extends AppCompatActivity {
                 finishSpeech(id, failed, partiallyPlayed);
             }
         });
+        new Thread(() -> {
+            StoryAudioIndex loaded = StoryAudioIndex.load(new java.io.File(getFilesDir(), "story-pack"));
+            if (!destroyed) {
+                storyAudioIndex = loaded;
+                android.util.Log.d("PokopiaTts", "Story-Pack geladen: " + loaded.size() + " Einträge");
+            }
+        }, "StoryPackLoader").start();
 
         // Load sound preference
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -673,7 +685,9 @@ public class MainActivity extends AppCompatActivity {
     private void invalidateAnalysis() {
         analysisGeneration.incrementAndGet();
         dialogueStability.reset();
+        earlyPrefixStability.reset();
         speakerTracker.reset();
+        applySpeakerTheme(NARRATOR);
         setReadableDialogue(null);
         lastAnalysisAt = 0L;
     }
@@ -732,7 +746,8 @@ public class MainActivity extends AppCompatActivity {
                         showStatus("Text konnte nicht verarbeitet werden – versuche erneut", false);
                     } finally {
                         if (analysis != null) {
-                            runOnUiThread(() -> applyAnalysis(analysis, now, release));
+                            final RecognitionAnalysis finalAnalysis = analysis;
+                            runOnUiThread(() -> applyAnalysis(finalAnalysis, now, release));
                         } else {
                             release.close();
                         }
@@ -752,7 +767,7 @@ public class MainActivity extends AppCompatActivity {
         // Worker: die teure Rechnung pro Frame läuft hier, damit die Main-Loop frei bleibt.
         long now = android.os.SystemClock.elapsedRealtime();
         if (result.getText().isBlank()) {
-            return new RecognitionAnalysis(new ArrayList<OcrLine>(), null, "", "", 0f, 0, true, now);
+            return new RecognitionAnalysis(new ArrayList<OcrLine>(), null, "", "", "", 0f, 0, true, now);
         }
 
         List<OcrLine> storyLines = new ArrayList<>();
@@ -795,13 +810,16 @@ public class MainActivity extends AppCompatActivity {
             storyLines.removeIf(line -> line.normalized.equals(labelKey));
         }
 
+        List<StoryTextAssembler.Line> assembledLines = toAssemblerLines(storyLines);
         String visibleStory = DialogueText.withoutSpeaker(
-                assembleStoryText(storyLines), detectedSpeaker);
+                StoryTextAssembler.assemble(assembledLines), detectedSpeaker);
+        String visibleFirstLine = DialogueText.withoutSpeaker(
+                StoryTextAssembler.firstLine(assembledLines), detectedSpeaker);
         String normalizedStory = normalize(visibleStory);
         android.util.Log.d("PokopiaTts", "OCR-Postverarbeitung "
                 + (android.os.SystemClock.elapsedRealtime() - now) + " ms");
-        return new RecognitionAnalysis(storyLines, detectedSpeaker, visibleStory, normalizedStory,
-                totalConfidence, confidenceCount, false, now);
+        return new RecognitionAnalysis(storyLines, detectedSpeaker, visibleStory, visibleFirstLine,
+                normalizedStory, totalConfidence, confidenceCount, false, now);
     }
 
     private void applyAnalysis(RecognitionAnalysis analysis, long frameStartedAt,
@@ -821,6 +839,7 @@ public class MainActivity extends AppCompatActivity {
             }
             if (analysis.storyLines.isEmpty()) {
                 clearPendingStoryIfStale(now);
+                applySpeakerTheme(NARRATOR);
                 setReadableDialogue(null);
                 speakerText.setText("BEREIT");
                 recognizedText.setText("Warte auf Pokopia-Dialog …");
@@ -834,7 +853,7 @@ public class MainActivity extends AppCompatActivity {
                 clearPendingStoryIfStale(now);
                 return;
             }
-            currentSpeaker = speakerTracker.observe(analysis.visibleStory, analysis.detectedSpeaker);
+            updateSpeakerFromOcr(analysis.visibleStory, analysis.detectedSpeaker);
             // Ohne Namenschild ist der Sprecher nicht sicher. Dann darf dieselbe
             // Zeile nicht erneut starten, nur weil sie unter einem anderen Namen liegt.
             boolean speakerUncertain = analysis.detectedSpeaker == null
@@ -850,6 +869,7 @@ public class MainActivity extends AppCompatActivity {
             if (isNonStoryNotification(analysis.normalizedStory)
                     || !TextRules.hasDialogueText(analysis.normalizedStory)) {
                 dialogueStability.reset();
+                earlyPrefixStability.reset();
                 setReadableDialogue(null);
                 speakerText.setText("SYSTEMMELDUNG");
                 if (ttsReady && speechQueue.size() == 0) showStatus("Ignoriert", true);
@@ -860,6 +880,15 @@ public class MainActivity extends AppCompatActivity {
             boolean stable = dialogueStability.accept(analysis.visibleStory, now);
             if (!ttsReady) return;
             boolean idle = speechQueue.size() == 0;
+            if (cloudSpeechEnabled && storyAudioIndex.size() > 0 && !stable && !speakerTracker.waitForName()) {
+                if (earlyPrefixStability.accept(analysis.visibleFirstLine, now)) {
+                    StoryAudioIndex.Match early = storyAudioIndex.matchEarlyPrefix(
+                            currentSpeaker, analysis.visibleFirstLine, speakerUncertain);
+                    if (early != null && trySpeakStoryPack(early, speakerUncertain, frameStartedAt)) {
+                        return;
+                    }
+                }
+            }
             if (!stable || speakerTracker.waitForName()) {
                 if (idle) showStatus("Prüfe Dialog …", true);
                 return;
@@ -891,6 +920,20 @@ public class MainActivity extends AppCompatActivity {
                 if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
                 return;
             }
+            if (cloudSpeechEnabled && storyAudioIndex.size() > 0) {
+                StoryAudioIndex.Match full = storyAudioIndex.matchFull(currentSpeaker, analysis.visibleStory, speakerUncertain);
+                if (full != null && TextRules.similarEnough(normalize(unread), full.entry.textNorm)) {
+                    String effectiveSpeaker = speakerUncertain ? full.entry.speaker : currentSpeaker;
+                    if (speechQueue.size() < MAX_QUEUED_UTTERANCES
+                            || !normalize(effectiveSpeaker).equals(cachedSpeaker)) {
+                        if (submitStoryPack(full, effectiveSpeaker)) {
+                            android.util.Log.d("PokopiaTts", "Story-Pack angenommen (Volltext), Frame bis Übergabe "
+                                    + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
+                        }
+                    }
+                    return;
+                }
+            }
             if (waitingForCloudRetry(now)) return;
 
             // Neuen Dialog vollständig und flüssig sprechen
@@ -912,6 +955,7 @@ public class MainActivity extends AppCompatActivity {
         final List<OcrLine> storyLines;
         final String detectedSpeaker;
         final String visibleStory;
+        final String visibleFirstLine;
         final String normalizedStory;
         final float confidenceSum;
         final int confidenceCount;
@@ -919,17 +963,89 @@ public class MainActivity extends AppCompatActivity {
         final long now;
 
         RecognitionAnalysis(List<OcrLine> storyLines, String detectedSpeaker, String visibleStory,
-                String normalizedStory, float confidenceSum, int confidenceCount,
-                boolean resultBlank, long now) {
+                String visibleFirstLine, String normalizedStory, float confidenceSum,
+                int confidenceCount, boolean resultBlank, long now) {
             this.storyLines = storyLines;
             this.detectedSpeaker = detectedSpeaker;
             this.visibleStory = visibleStory;
+            this.visibleFirstLine = visibleFirstLine;
             this.normalizedStory = normalizedStory;
             this.confidenceSum = confidenceSum;
             this.confidenceCount = confidenceCount;
             this.resultBlank = resultBlank;
             this.now = now;
         }
+    }
+
+    private void applyStatusColor() {
+        int color = !statusIsGood ? R.color.coral
+                : speakerTheme == ZeldaTheme.Style.ZELDA ? R.color.zelda_green_light : R.color.leaf;
+        statusText.setTextColor(ContextCompat.getColor(this, color));
+    }
+
+    void updateSpeakerFromOcr(String visibleStory, String detectedSpeaker) {
+        currentSpeaker = speakerTracker.observe(visibleStory, detectedSpeaker);
+        applySpeakerTheme(currentSpeaker);
+    }
+
+    void applySpeakerTheme(String speaker) {
+        ZeldaTheme.Style next = ZeldaTheme.forSpeaker(speaker);
+        if (next == speakerTheme) return;
+        speakerTheme = next;
+        boolean zelda = next == ZeldaTheme.Style.ZELDA;
+        int ink = zelda ? R.color.zelda_ink : R.color.navy_ink;
+        int accent = zelda ? R.color.zelda_gold : R.color.gold;
+        int secondary = zelda ? R.color.zelda_green_light : R.color.sky;
+
+        findViewById(R.id.topPanel).setBackgroundResource(
+                zelda ? R.drawable.hud_background_zelda : R.drawable.hud_background);
+        findViewById(R.id.cameraShade).setBackgroundResource(
+                zelda ? R.drawable.camera_shade_zelda : R.drawable.camera_shade);
+        findViewById(R.id.storyRegion).setBackgroundResource(
+                zelda ? R.drawable.story_region_background_zelda : R.drawable.story_region_background);
+        findViewById(R.id.storyRegionLabel).setBackgroundResource(
+                zelda ? R.drawable.story_label_background_zelda : R.drawable.story_label_background);
+        findViewById(R.id.controlPanel).setBackgroundResource(
+                zelda ? R.drawable.control_panel_background_zelda : R.drawable.control_panel_background);
+        findViewById(R.id.dialogPanel).setBackgroundResource(
+                zelda ? R.drawable.dialog_card_background_zelda : R.drawable.dialog_card_background);
+        dialoguePanel.setForeground(
+                zelda ? getDrawable(R.drawable.dialog_card_action_ripple_zelda)
+                        : getDrawable(R.drawable.dialog_card_action_ripple));
+        findViewById(R.id.statusText).setBackgroundResource(
+                zelda ? R.drawable.status_background_zelda : R.drawable.status_background);
+        findViewById(R.id.appEmblem).setBackgroundResource(
+                zelda ? R.drawable.emblem_background_zelda : R.drawable.emblem_background);
+        ((ImageView) findViewById(R.id.appIcon)).setImageResource(
+                zelda ? R.drawable.ic_triforce : R.drawable.ic_pikachu);
+        findViewById(R.id.appIcon).setContentDescription(getString(
+                zelda ? R.string.app_icon_description_hyrule : R.string.app_icon_description_pokopia));
+        ((ImageView) findViewById(R.id.storyZoneIcon)).setColorFilter(
+                getColor(zelda ? R.color.zelda_gold : R.color.navy_ink));
+        ((TextView) findViewById(R.id.storyZoneText)).setTextColor(getColor(ink));
+        ((TextView) findViewById(R.id.appTitleText)).setText(
+                zelda ? R.string.app_title_hyrule : R.string.app_title_pokopia);
+        ((TextView) findViewById(R.id.appTitleText)).setTextColor(getColor(accent));
+        ((TextView) findViewById(R.id.appSubtitleText)).setTextColor(getColor(secondary));
+        ((TextView) findViewById(R.id.speakerText)).setBackgroundResource(
+                zelda ? R.drawable.speaker_chip_background_zelda : R.drawable.speaker_chip_background);
+        recognizedText.setTextColor(getColor(ink));
+        readNowHint.setTextColor(getColor(ink));
+        confidenceText.setTextColor(getColor(ink));
+
+        for (int id : new int[]{R.id.speechButton, R.id.zoomButton, R.id.pauseButton}) {
+            ((MaterialButton) findViewById(id)).setBackgroundTintList(getColorStateList(accent));
+        }
+        ((MaterialButton) findViewById(R.id.repeatButton)).setBackgroundTintList(
+                getColorStateList(zelda ? R.color.zelda_green : R.color.blue));
+        SeekBar speed = findViewById(R.id.speedSeekBar);
+        speed.setProgressTintList(getColorStateList(accent));
+        speed.setThumbTintList(getColorStateList(accent));
+        SeekBar volume = findViewById(R.id.volumeSeekBar);
+        volume.setProgressTintList(getColorStateList(secondary));
+        volume.setThumbTintList(getColorStateList(secondary));
+        updateSoundsToggleButton(findViewById(R.id.soundsToggleButton));
+        applyStatusColor();
     }
 
     private void setReadableDialogue(String text) {
@@ -952,8 +1068,22 @@ public class MainActivity extends AppCompatActivity {
         String text = readableDialogue;
         if (text == null || !ttsReady || !acceptsFrame(analysisGeneration.get())) return;
         String normalized = normalize(text);
-        if (DialogueHistory.key(currentSpeaker, normalized).equals(speechQueue.firstKey())
-                || waitingForCloudRetry(android.os.SystemClock.elapsedRealtime())) return;
+        if (DialogueHistory.key(currentSpeaker, normalized).equals(speechQueue.firstKey())) return;
+
+        boolean speakerUncertain = normalize(currentSpeaker).equals(normalize(NARRATOR));
+        if (cloudSpeechEnabled && storyAudioIndex.size() > 0) {
+            StoryAudioIndex.Match packMatch = storyAudioIndex.matchFull(currentSpeaker, text, speakerUncertain);
+            if (packMatch != null) {
+                stopSpeech();
+                String effectiveSpeaker = speakerUncertain ? packMatch.entry.speaker : currentSpeaker;
+                if (submitStoryPack(packMatch, effectiveSpeaker)) {
+                    interruptedDialogueKey = null;
+                    android.util.Log.d("PokopiaTts", "Dialog manuell angenommen (Story-Pack)");
+                }
+                return;
+            }
+        }
+        if (waitingForCloudRetry(android.os.SystemClock.elapsedRealtime())) return;
 
         // Ein bewusster Tipp darf bereits gehörten Text sofort erneut vorlesen.
         stopSpeech();
@@ -961,6 +1091,54 @@ public class MainActivity extends AppCompatActivity {
             interruptedDialogueKey = null;
             android.util.Log.d("PokopiaTts", "Dialog manuell angenommen");
         }
+    }
+
+    private boolean trySpeakStoryPack(StoryAudioIndex.Match match, boolean speakerUncertain, long frameStartedAt) {
+        String effectiveSpeaker = speakerUncertain ? match.entry.speaker : currentSpeaker;
+        String effectiveKey = DialogueHistory.key(effectiveSpeaker, match.entry.textNorm);
+        boolean idle = speechQueue.size() == 0;
+        if (interruptedDialogueKey != null) {
+            if (DialogueHistory.matches(interruptedDialogueKey, effectiveKey)) {
+                if (idle) showInterruptedSpeech();
+                return true;
+            }
+            interruptedDialogueKey = null;
+        }
+        boolean alreadySpoken = speakerUncertain
+                ? dialogueHistory.wasSpokenAnywhere(match.entry.textNorm)
+                : dialogueHistory.wasSpoken(effectiveSpeaker, match.entry.textNorm);
+        if (alreadySpoken) {
+            if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
+            return true;
+        }
+        boolean awaitsOverlap = speakerUncertain
+                ? dialogueHistory.awaitsOverlappingSpeechAnywhere(match.entry.textNorm)
+                : dialogueHistory.awaitsOverlappingSpeech(effectiveSpeaker, match.entry.textNorm);
+        if (awaitsOverlap) return true;
+        if (speechQueue.size() < MAX_QUEUED_UTTERANCES
+                || !normalize(effectiveSpeaker).equals(cachedSpeaker)) {
+            if (!submitStoryPack(match, effectiveSpeaker)) return false;
+            android.util.Log.d("PokopiaTts", "Story-Pack angenommen (Frühstart), Frame bis Übergabe "
+                    + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
+            return true;
+        }
+        return false;
+    }
+
+    private boolean submitStoryPack(StoryAudioIndex.Match match, String speaker) {
+        if (!ttsReady || paused || !foreground || destroyed || !cloudSpeechEnabled) return false;
+        if (speechQueue.size() > 0 && !normalize(speaker).equals(cachedSpeaker)) stopSpeech();
+        String source = match.earlyPrefix ? "Story-Pack · Frühstart" : "Story-Pack";
+        String historyKey = DialogueHistory.key(speaker, match.entry.textNorm);
+        boolean accepted = speechQueue.submit(historyKey, id ->
+                cloudPlayer.speakLocalFile(id, match.audioFile, source, volume));
+        if (!accepted) return false;
+        cachedSpeaker = normalize(speaker);
+        dialogueHistory.begin(historyKey);
+        speakerTracker.markSent();
+        lastSpokenNormalized = match.entry.textNorm;
+        lastSpokenSpeaker = normalize(speaker);
+        return true;
     }
 
     private void showInterruptedSpeech() {
@@ -1192,8 +1370,10 @@ public class MainActivity extends AppCompatActivity {
 
     private void clearPendingStoryIfStale(long now) {
         if (dialogueStability.absent(now)) {
+            earlyPrefixStability.reset();
             speakerTracker.reset();
             interruptedDialogueKey = null;
+            applySpeakerTheme(NARRATOR);
             setReadableDialogue(null);
         }
     }
@@ -1544,7 +1724,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private String assembleStoryText(List<OcrLine> lines) {
+    private List<StoryTextAssembler.Line> toAssemblerLines(List<OcrLine> lines) {
         List<StoryTextAssembler.Line> input = new ArrayList<>();
         if (lines != null) for (OcrLine line : lines) {
             if (line != null && line.box != null) {
@@ -1552,7 +1732,7 @@ public class MainActivity extends AppCompatActivity {
                         line.box.top, line.box.right, line.box.bottom));
             }
         }
-        return StoryTextAssembler.assemble(input);
+        return input;
     }
 
     private void loadDialogueHistory(SharedPreferences prefs) {
@@ -1578,7 +1758,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void showStatus(String message, boolean good) {
         statusText.setText("●  " + message);
-        statusText.setTextColor(ContextCompat.getColor(this, good ? R.color.leaf : R.color.coral));
+        statusIsGood = good;
+        applyStatusColor();
     }
 
     // === Sound Feedback ===
@@ -1605,7 +1786,8 @@ public class MainActivity extends AppCompatActivity {
         if (soundsEnabled) {
             button.setText("EIN");
             button.setIconResource(R.drawable.ic_volume);
-            button.setBackgroundTintList(getColorStateList(R.color.gold));
+            button.setBackgroundTintList(getColorStateList(
+                    speakerTheme == ZeldaTheme.Style.ZELDA ? R.color.zelda_gold : R.color.gold));
         } else {
             button.setText("AUS");
             button.setIconResource(R.drawable.ic_volume_off);

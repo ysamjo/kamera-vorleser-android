@@ -15,4 +15,10 @@
     <color name="green">#55E590</color>
     <color name="dark_panel">#EB0B173A</color>
     <color name="red">#FF6671</color>
+    <color name="zelda_green">#1F6B4A</color>
+    <color name="zelda_green_dark">#0B2D22</color>
+    <color name="zelda_green_light">#7CD69C</color>
+    <color name="zelda_gold">#E7C86E</color>
+    <color name="zelda_cream">#F7F2D7</color>
+    <color name="zelda_ink">#173B2E</color>
 </resources>

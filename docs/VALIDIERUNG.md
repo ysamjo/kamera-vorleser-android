@@ -1,5 +1,88 @@
 # Umsetzung und Validierung
 
+## 25.11.2026 · Zelda-Design bei bestätigtem Sprecher (1.6.8 / Code 15)
+
+Bei bestätigtem, normalisiertem Sprecher `Zelda` wechseln Kopfzeile, Emblem,
+Dialogkarte, Story-Zone, Statusflächen und Bedienelemente zu einem grün-goldenen
+Hyrule-Design. Die Kopfzeile zeigt `HYRULE`, das Emblem die Triforce. Ein einzelner
+abweichender OCR-Sprecherkandidat löst keinen Wechsel aus; die bestehende
+Sprecherplausibilisierung bleibt maßgeblich. Ohne Zelda oder bei einem anderen
+Sprecher wird das normale Pokopia-Design vollständig wiederhergestellt. Layout,
+Kamera, OCR, TTS und Bediensemantik bleiben unverändert.
+
+Drei JVM-Tests prüfen Normalisierung, den stabilen Sprecher sowie den Normalzustand.
+Der UI-Test durchläuft denselben produktiven OCR-Sprecherpfad mit kontrollierten
+Sprecherkandidaten. Er vergleicht gerenderte Hintergründe, Embleme und Akzente und
+prüft Titel, Farben, Kontrast, Barrierefreiheit, Einzelabweichung, Bestätigung,
+Wechsel zu Pikachu, neuen Dialog ohne Label sowie den Reset über Pause. Cloud-TTS
+und lokale Sprachausgabe werden für den Test isoliert; vorhandene Einstellungen
+werden vollständig wiederhergestellt. Die Kamera darf starten, jedoch laufen
+sämtliche Assertions synchron auf dem Main Thread, sodass asynchron gepostete
+OCR-Ergebnisse nicht zwischen die Messungen gelangen können. Die vollständige
+Debug-/Release-Matrix für APKs, Bundles, Lint und Unit-Tests war erfolgreich: je
+**130 Unit-Tests** ohne Fehler, Errors oder Skips; Lint je **0 Fehler und 59
+Warnungen**, ohne neue Baseline oder Unterdrückung. Die gesamte
+Instrumentation-Suite bestand auf dem Android-34-Emulator mit **13/13 Tests und
+0 Skips**. Normalansicht und Zelda-Ansicht wurden dort auch visuell geprüft.
+
+Der datenerhaltende Rollout auf das bestätigte Pixel 10 Pro steht noch aus, da es
+zum Prüfzeitpunkt nicht per WLAN-ADB erreichbar war. Die Erkennung eines echten
+Zelda-Namensschilds vor laufender Kamera und die subjektive Gestaltungsabnahme sind
+weiterhin offen; der UI-Test ersetzt diese Geräteabnahme nicht.
+
+## 24.11.2026 · Vollständige Hauptstory (Domtendo #1–#28) mit Fish Audio
+
+Nach Wegfall der YouTube-Bot-Prüfung wurden die fehlenden Hauptstory-Folgen `#20–#28` nachgezogen und das kombinierte Pack über inhaltsbewusstes Resume (`load_previous_index` / `select_render_todo` in `scripts/story-pack/render_pack.py`) in `Archiv/story-pack/pack-pokopia-fish` erweitert:
+
+- **Vollständige Hauptstory-Extraktion (`#1–#28`):** Alle `28` Hauptstory-Folgen (`Domtendo #1–#28`, bis Story-Ende) mit `0` OCR-Fehlern extrahiert; Videos nach Extraktion gelöscht.
+- **Bereinigter Gesamtkorpus & Inkrementeller Fish-Lauf (`s2.1-pro-free`):** `2.942` Rohdialoge → `77` Rauschen entfernt, `345` Duplikate zusammengeführt → **`2.520` eindeutige Dialoge** (`162.871` Zeichen) über **`13` aktive Pokopia-Rollen** aus dem `15`-Stimmen-Katalog (`Erzähler / System` 1462, `Professor Tangoloss` 559, `Schiggy & Flinke` 165, `Scherox & Handwerker` 68, `DJ Rotom & Technik` 52, `Bisasam-Linie` 51, `Driftlon & Geister` 43, `Onix & Legendäre` 26, `Relaxo & Gemütliche` 25, `Felori & Elegante` 25, `Plinfa & Kleine` 22, `Glumanda-Linie` 16, `Schlappchu` 6). Dabei wurden `1.585` unveränderte `.ogg`-Dateien wiederverwendet und `935` neue bzw. geänderte Einträge gerendert (`0` Fehler, `22/22` Python-Unit-Tests).
+- **Audio-Umfang & Stichprobe:** `2.520` Opus-Dateien ohne Temp-Reste (**`41,45 MB` Audio** / `43.464.007` Bytes, `47 MB` Paketordner); `ffprobe` bestätigte 48-kHz-Opus (`dlg_1600.ogg` `2,88 s`, `dlg_2520.ogg` `6,97 s`).
+- **Geräte-Rollout & Kaltstart (`Pixel_10_Pro`):** `push-pack.sh` übertrug alle `2.520` Einträge per `run-as` nach `files/story-pack/` (`2.520` Indexzeilen + `2.520` `.ogg`-Dateien bestätigt, Keystore/`no_backup` unberührt); beim App-Kaltstart bestätigte Logcat **`D PokopiaTts: Story-Pack geladen: 2520 Einträge`**.
+- **Offene Grenzen:** Postgame-/DLC-Livestreams (`#29–#34`) bleiben optional außen vor; die reale Live-Kamera-/Hörabnahme (Early-Prefix-Frühstart + Cache-Treffer) direkt vor der Switch 2 steht noch aus.
+
+## 23.11.2026 · Produktives 19-Folgen-Story-Pack mit Fish Audio
+
+Mit bereitgestelltem Fish-Audio-Zugang (nur per Umgebungsvariable übergeben, nicht gespeichert) wurden alle `1.594` eindeutigen Dialoge aus Domtendo `#1–#19` in `Archiv/story-pack/pack-pokopia-fish` gerendert:
+
+- **Modell & Umfang:** Im 3-Dialog-Smoke-Test (`--limit 3`) lief `drama-3`; beim Gesamtlauf über `1.594` Dialoge (`99.825` Zeichen, `10` aktive Rollen aus dem `15`-Stimmen-Katalog) griff der automatische HTTP-402-Fallback auf `s2.1-pro-free` (`3` wiederverwendet, `1.591` neu gerendert, `0` Fehler).
+- **Audio-Ausgabe & Stichprobe:** `index.jsonl` und `audio/` umfassen jeweils `1.594` Einträge ohne Temp-Reste (`26,23 MB` Audio / `27.508.155` Bytes, `30 MB` Paketordner); `ffprobe` bestätigte 48-kHz-Opus (`dlg_0001.ogg` `4,00 s`, `dlg_0010.ogg` `8,55 s`, `dlg_1594.ogg` `5,34 s`).
+- **Gerätestatus (`Pixel_10_Pro`):** Nach erneutem WLAN-ADB-Connect (`adb-5C230DLCH003RC-wFPUab._adb-tls-connect._tcp`) übertrug `push-pack.sh` das vollständige `pack-pokopia-fish` per `run-as` ohne Keystore-Eingriff (`1.594` Zeilen in `files/story-pack/index.jsonl` und `1.594` `.ogg`-Dateien in `files/story-pack/audio/` auf dem Gerät bestätigt). `am force-stop` und `am start -n de.stegmann.kameravorleser/.MainActivity` liefen anschließend an; vor der 4 Sekunden später angesetzten `logcat -d`-Auslese trennte sich WLAN-ADB jedoch erneut, sodass der `Story-Pack geladen`-Logeintrag für dieses Paket noch nicht ausgelesen werden konnte.
+- **Verbleibende Grenzen:** Bestätigter Logcat-Kaltstartnachweis für `pack-pokopia-fish`, Nachreichen der Folgen `#20–#28` nach lösbarer YouTube-Bot-Prüfung sowie reale Live-Kamera-/Hörabnahme vor der Switch 2.
+
+## 23.11.2026 · 19-Folgen-Story-Pack (Domtendo #1–#19) und Playlist-Batch-Pipeline
+
+Für den Ausbau über mehrere Episoden wurden `scripts/story-pack/extract_script.py` (`--delete-video`, `try...finally`-Cleanup für `frames/`), der resumable Playlist-Runner `scripts/story-pack/extract_playlist.py` sowie `scripts/story-pack/render_pack.py` (Bigram-/Exakt-Deduplizierung, Fish-Audio-Retry/Backoff und `role_counts`) erweitert und mit `21/21` Python-Unit-Tests geprüft:
+
+- **Playlist-Extraktion (Domtendo #1–#19):** Alle `19` Folgen vollständig und mit `0` OCR-Fehlern extrahiert (`Archiv/story-pack/domtendo-001` bis `domtendo-019`); temporäre Frames und heruntergeladene Videos wurden nach Erfolg gelöscht.
+- **Bereinigtes 19-Folgen-Pack (`macos-say` + Opus 28 kbps):** `1.868` Rohdialoge → `58` Rauscheinträge entfernt, `216` Duplikate zusammengeführt → **`1.594` eindeutige Dialoge** (`99.825` Zeichen) über `10` aktive Pokopia-Rollen (`Erzähler / System` 863, `Professor Tangoloss` 438, `Schiggy & Flinke` 78, `Scherox & Handwerker` 60, `Bisasam-Linie` 51, `Driftlon & Geister` 43, `Plinfa & Kleine` 22, `Relaxo & Gemütliche` 19, `Glumanda-Linie` 16, `Schlappchu` 4), belegt **`22,35 MB` Audio** (`23.431.523` Bytes, `26 MB` Paketordner).
+- **Geräteprüfung (`Pixel_10_Pro`, `adb-5C230DLCH003RC-wFPUab._adb-tls-connect._tcp`):** `push-pack.sh` übertrug per `run-as` alle `1.594` Einträge (`index.jsonl` + `audio/`) ohne Keystore-/Deinstallations-Eingriff nach `files/story-pack/`; beim App-Kaltstart bestätigte Logcat `D PokopiaTts: Story-Pack geladen: 1594 Einträge`.
+- **Offene Grenzen:** Ab Folge `#20` (`yrOzR56G3ic`) verlangte YouTube eine anonyme Bot-Prüfung (`Sign in to confirm you're not a bot`), weshalb `#20–#28` ohne Umgehung pausiert wurden (resumable nachholbar über `extract_playlist.py --start 20 --end 28`). Das produktive Fish-Audio-Drama-3-Rendering bleibt mangels `FISH_API_KEY` offen; die akustische Live-Kamera-Abnahme vor der Switch 2 steht weiterhin aus.
+
+## 22.11.2026 · Story-Pack-Renderer, Geräte-Push und Startlatenz auf dem Pixel 10 Pro
+
+Für Meilenstein 3 wurden der Offline-/Cloud-Pack-Renderer (`scripts/story-pack/render_pack.py`), das sichere Übertragungsskript (`scripts/story-pack/push-pack.sh`) und der On-Device-Test `LocalPlaybackFastPathTest` ergänzt und auf dem **Pixel 10 Pro** (`adb-5C230DLCH003RC-wFPUab._adb-tls-connect._tcp`) verifiziert:
+
+- **Bereinigtes Folge-1-Pack (`macos-say` + Opus 28 kbps):** Aus `162` rohen OCR-Einträgen wurden `6` Rauscheinträge gefiltert und `7` Duplikate nach Sprecher-Bereinigung zusammengeführt → **`149` Dialoge** (`9.423` Zeichen), belegt **`2,04 MB`** Audio (`2,4 MB` inkl. Index/Manifest).
+- **Gerätetest per `scripts/test-device.sh` (`adb install -r` ohne Deinstallation):**
+  - `LocalPlaybackFastPathTest` (2/2 bestanden in `1,21 s`): **Opus-Startlatenz `71 ms`**, **24-kHz-WAV-Startlatenz `52–54 ms`**; beide Dateien bleiben nach Wiedergabe erhalten.
+  - Gesamte Instrumentation-Suite: `9/12` Tests bestanden (`BundledOcrSmokeTest` 1, `CloudVoiceSettingsTest` 3, `LocalPlaybackFastPathTest` 2, `PcmSpeechOutputTest` 3); die `3` Tests in `LifecycleSmokeTest` wurden wegen gesperrtem Bildschirm (`Assume.assumeTrue("Gerät muss wach und entsperrt sein")`) übersprungen.
+- **Pack-Push & App-Start:** `push-pack.sh` übertrug alle `149` Einträge nach `files/story-pack/` ohne Keystore-Zugriff; beim Kaltstart von `MainActivity` meldete Logcat `Story-Pack geladen: 149 Einträge`.
+- **Offen:** Produktives Rendern eines vollständigen Walkthroughs mit `FISH_API_KEY` (Drama 3) sowie reale Live-Kamera-Abnahme (Early-Prefix-Frühstart + Cache-Wiederholung) direkt vor der Switch 2.
+
+## 22.11.2026 · Lokaler Story-Pack-Unterbau, Early-Prefix-Start und Audio-Cache
+
+Für Meilenstein 2 wurde der App-Unterbau für lokale Wiedergabe ohne Cloud-Wartezeit ergänzt:
+
+- **`StoryAudioIndex` + `StoryTextAssembler.firstLine`:** Lädt ein optionales lokales Pack unter `<filesDir>/story-pack/index.jsonl` asynchron im Hintergrund (mit Schutz gegen fehlende Audiodateien und Pfad-Traversal). Bietet exaktes/unscharfes Volltext-Matching sowie eindeutiges Early-Prefix-Matching auf Zeile 1 (mindestens 25 Zeichen oder 4 Wörter, zweifache Bestätigung via `PrefixStability`). Bei einem Frühstart trägt `MainActivity` den vollständigen Zieltext des Pack-Eintrags in `DialogueHistory` ein, damit das Fertigtippen von Zeile 2/3 keine zweite Sprachausgabe auslöst.
+- **`SpeechAudioCache` + `CloudSpeechPlayer`:** Persistenter lokaler LRU-Cache unter `<filesDir>/tts-cache` (max. 150 MB). Bei Cache-Treffern oder Story-Pack-Dateien spielt `CloudSpeechPlayer` direkt lokal über `MediaPlayer` ab, ohne temporäre Cache-/Pack-Dateien bei `release()` zu löschen. Live-Fish-Streams werden parallel verlustfrei als 24-kHz-Mono-WAV mitgeschnitten und erst nach vollständigem Empfang atomar gespeichert; abgebrochene Streams verwerfen ihre temporäre Datei. Google-Backup-MP3s werden ebenfalls gecacht. Der explizit gewählte Offline-TTS-Modus (`!cloudSpeechEnabled`) bleibt unverändert.
+
+**Verifiziert per JVM-Unit-Tests (127 Tests, 0 Fehler/Skips):**
+- `StoryAudioIndexTest` (6 Tests): JSONL-Parsing mit Umlauten/Escapes, Path-Traversal- und Fehlpfad-Abwehr, Volltext-/Fuzzy-Treffer, Early-Prefix-Qualifikation und Kollisionsschutz, Zusammenspiel mit `DialogueHistory` sowie `PrefixStability`.
+- `SpeechAudioCacheTest` (5 Tests): deterministische Cache-Keys, Google-MP3-Speicherung und WAV-Priorisierung, gültiger 44-Byte-WAV-Header beim PCM-Mitschnitt, Aufräumen abgebrochener Mitschnitte sowie LRU-Bereinigung.
+- `StoryTextAssemblerTest` (4 Tests, davon 1 neu für `firstLine`).
+
+**Offene Geräteprüfungen (für Meilenstein 3):** Reale `MediaPlayer`-Startlatenz auf dem Pixel, Übertragen eines gerenderten Story-Packs nach `<filesDir>/story-pack/` sowie Praxistest von Early-Prefix-Start und Live-Cache-Wiederholung vor echter Kamera.
+
 ## 20.11.2026 · OCR-Nachverarbeitung auf Worker (1.8 / Code 16)
 
 `handleRecognizedText` wurde zerlegt, um die OCR-Postverarbeitung von Main Thread zu trennen:
