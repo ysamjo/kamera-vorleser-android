@@ -80,6 +80,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String NARRATOR = "Erzähler";
     private static final String PREFS_NAME = "KameraVorleserPrefs";
     private static final String KEY_SOUNDS_ENABLED = "soundsEnabled";
+    private static final String KEY_GAME_PROFILE = "gameProfileV1";
     private static final String THORSTEN_ENGINE = "com.k2fsa.sherpa.onnx.tts.engine";
     private static final String THORSTEN_SETUP = "thorstenEngineConfiguredV1";
     private static final String THORSTEN_DOWNLOAD = "https://k2-fsa.github.io/sherpa/onnx/tts/apk-engine.html";
@@ -111,6 +112,7 @@ public class MainActivity extends AppCompatActivity {
     private final DialogueHistory dialogueHistory = new DialogueHistory(MAX_REMEMBERED_LINES);
     private final List<Voice> germanVoices = new ArrayList<>();
     private ExecutorService cameraExecutor;
+    private ExecutorService analysisExecutor = Executors.newSingleThreadExecutor();
     private TextRecognizer textRecognizer;
     private TextToSpeech textToSpeech;
     private CloudSpeechPlayer cloudPlayer;
@@ -155,6 +157,9 @@ public class MainActivity extends AppCompatActivity {
     private CameraInfo wideCamera;
 
     private String previousSpeaker = "";
+
+    // Erkennungsprofil: POKOPIA = bewährte Literale, GENERIC_LOWER_THIRD = unteres Drittel (Zelda-like Spiele)
+    private volatile GameProfile gameProfile = GameProfile.POKOPIA;
 
     // Dialog & Satzfluss-Tracking (Wachstum, Klick-Erweiterung, Duplikatvermeidung)
     private String lastSpokenNormalized = "";
@@ -283,6 +288,8 @@ public class MainActivity extends AppCompatActivity {
         volumeSeekBar.setProgress(Math.round(volume * 100));
         characterEffects = prefs.getBoolean("characterEffects", false);
         selectedEngine = prefs.getString("speechEngine", "");
+        gameProfile = "generic".equals(prefs.getString(KEY_GAME_PROFILE, "pokopia"))
+                ? GameProfile.GENERIC_LOWER_THIRD : GameProfile.POKOPIA;
         startSpeechEngine(selectedEngine);
 
         // Initialize tone generator for audio feedback
@@ -401,7 +408,8 @@ public class MainActivity extends AppCompatActivity {
         stopSpeech();
         String[] choices = {"Fish Audio + Google-Backup einrichten", "Probehören: Umlaute und Sprecherwechsel",
                 "Figureneffekte: " + (characterEffects ? "EIN" : "AUS"), "Normales Sprechtempo (1,0×)",
-                "Lokale Sprachengine auswählen", "Deutsche Offline-Stimme auswählen", "Thorsten einrichten / aktivieren"};
+                "Lokale Sprachengine auswählen", "Deutsche Offline-Stimme auswählen", "Thorsten einrichten / aktivieren",
+                "Story-Zone: Pokopia / Weitere Spiele (unteres Drittel)"};
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Sprachausgabe")
                 .setItems(choices, (d, which) -> {
@@ -427,9 +435,23 @@ public class MainActivity extends AppCompatActivity {
                         showStatus("Sprechtempo auf 1,0× gesetzt", true);
                     } else if (which == 4) showEnginePicker();
                     else if (which == 5) showVoicePicker();
+                    else if (which == 6) showGameProfilePicker();
                     else setupThorsten();
                 }).setNegativeButton("Schließen", null).create();
         showSpeechDialog(dialog);
+    }
+
+    private void showGameProfilePicker() {
+        String[] choices = {"Pokopia (Standard)",
+                "Weitere Spiele – Sprechblasen im unteren Drittel (z. B. Zelda Ocarina of Time)"};
+        int checked = gameProfile == GameProfile.GENERIC_LOWER_THIRD ? 1 : 0;
+        showSpeechDialog(new AlertDialog.Builder(this).setTitle("Story-Erkennungsprofil")
+                .setSingleChoiceItems(choices, checked, (dialog, which) -> {
+                    gameProfile = which == 1 ? GameProfile.GENERIC_LOWER_THIRD : GameProfile.POKOPIA;
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                            .putString(KEY_GAME_PROFILE, which == 1 ? "generic" : "pokopia").apply();
+                    dialog.dismiss();
+                }).setNegativeButton("Schließen", null).create());
     }
 
     private void showSpeechDialog(AlertDialog dialog) {
@@ -704,18 +726,33 @@ public class MainActivity extends AppCompatActivity {
             int width = rotation == 90 || rotation == 270 ? imageProxy.getHeight() : imageProxy.getWidth();
             int height = rotation == 90 || rotation == 270 ? imageProxy.getWidth() : imageProxy.getHeight();
             textRecognizer.process(image).addOnCompleteListener(ContextCompat.getMainExecutor(this), task -> {
-                try {
-                    if (!acceptsFrame(generation)) return;
-                    if (task.isSuccessful()) {
-                        handleRecognizedText(task.getResult(), imageProxy, rotation, width, height, now);
-                    } else {
-                        showStatus("Texterkennung fehlgeschlagen – versuche erneut", false);
-                    }
-                } catch (RuntimeException error) {
-                    showStatus("Text konnte nicht verarbeitet werden – versuche erneut", false);
-                } finally {
+                if (!acceptsFrame(generation)) {
                     release.close();
+                    return;
                 }
+                if (!task.isSuccessful()) {
+                    showStatus("Texterkennung fehlgeschlagen – versuche erneut", false);
+                    release.close();
+                    return;
+                }
+                analysisExecutor.execute(() -> {
+                    RecognitionAnalysis analysis = null;
+                    try {
+                        if (acceptsFrame(generation)) {
+                            analysis = analyze(task.getResult(), imageProxy, rotation, width, height);
+                        }
+                    } catch (RuntimeException error) {
+                        android.util.Log.w("PokopiaTts", "OCR-Postverarbeitung fehlgeschlagen", error);
+                        showStatus("Text konnte nicht verarbeitet werden – versuche erneut", false);
+                    } finally {
+                        if (analysis != null) {
+                            final RecognitionAnalysis finalAnalysis = analysis;
+                            runOnUiThread(() -> applyAnalysis(finalAnalysis, now, release));
+                        } else {
+                            release.close();
+                        }
+                    }
+                });
             });
         } catch (RuntimeException error) {
             release.close();
@@ -725,19 +762,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void handleRecognizedText(
-            Text result,
-            ImageProxy imageProxy,
-            int rotation,
-            int frameWidth,
-            int frameHeight,
-            long frameStartedAt
-    ) {
+    private RecognitionAnalysis analyze(Text result, ImageProxy imageProxy, int rotation,
+            int frameWidth, int frameHeight) {
+        // Worker: die teure Rechnung pro Frame läuft hier, damit die Main-Loop frei bleibt.
         long now = android.os.SystemClock.elapsedRealtime();
         if (result.getText().isBlank()) {
-            clearPendingStoryIfStale(now);
-            confidenceText.setVisibility(View.GONE);
-            return;
+            return new RecognitionAnalysis(new ArrayList<OcrLine>(), null, "", "", "", 0f, 0, true, now);
         }
 
         List<OcrLine> storyLines = new ArrayList<>();
@@ -771,136 +801,179 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // OCR-Konfidenz anzeigen
-        if (confidenceCount > 0) {
-            float avgConfidence = totalConfidence / confidenceCount;
-            int percent = Math.round(avgConfidence * 100);
-            runOnUiThread(() -> {
-                confidenceText.setText("OCR: " + percent + "%");
-                confidenceText.setVisibility(android.view.View.VISIBLE);
-            });
-        }
-
         String detectedSpeaker = detectSpeaker(result, storyLines, frameWidth, frameHeight);
-        // Graue Welt-/Menüflächen sind ohne zugehöriges Namensschild kein Tierdialog.
-        if (!BubbleAppearance.isCharacterLabel(detectedSpeaker)) storyLines.removeAll(grayLines);
+        // Im POKOPIA-Profil sind graue Welt-/Menüflächen ohne zugehöriges Namenschild kein Tierdialog.
+        if (gameProfile.grayNeedsSpeakerLabel()
+                && !BubbleAppearance.isCharacterLabel(detectedSpeaker)) storyLines.removeAll(grayLines);
         if (detectedSpeaker != null) {
             String labelKey = normalize(detectedSpeaker);
             storyLines.removeIf(line -> line.normalized.equals(labelKey));
         }
 
-        if (storyLines.isEmpty()) {
-            clearPendingStoryIfStale(now);
-            applySpeakerTheme(NARRATOR);
-            setReadableDialogue(null);
-            speakerText.setText("BEREIT");
-            recognizedText.setText("Warte auf Pokopia-Dialog …");
-            confidenceText.setVisibility(View.GONE);
-            if (ttsReady && speechQueue.size() == 0 && now >= nextCloudAttemptAt) {
-                showStatus("Suche Text …", true);
-            }
-            return;
-        }
-
         List<StoryTextAssembler.Line> assembledLines = toAssemblerLines(storyLines);
         String visibleStory = DialogueText.withoutSpeaker(
                 StoryTextAssembler.assemble(assembledLines), detectedSpeaker);
-        if (visibleStory.isBlank()) {
-            clearPendingStoryIfStale(now);
-            return;
-        }
+        String visibleFirstLine = DialogueText.withoutSpeaker(
+                StoryTextAssembler.firstLine(assembledLines), detectedSpeaker);
         String normalizedStory = normalize(visibleStory);
-        updateSpeakerFromOcr(visibleStory, detectedSpeaker);
-        // Ohne Namensschild ist der Sprecher nicht sicher. Dann darf dieselbe
-        // Zeile nicht erneut starten, nur weil sie unter einem anderen Namen liegt.
-        boolean speakerUncertain = detectedSpeaker == null
-                && normalize(currentSpeaker).equals(normalize(NARRATOR));
+        android.util.Log.d("PokopiaTts", "OCR-Postverarbeitung "
+                + (android.os.SystemClock.elapsedRealtime() - now) + " ms");
+        return new RecognitionAnalysis(storyLines, detectedSpeaker, visibleStory, visibleFirstLine,
+                normalizedStory, totalConfidence, confidenceCount, false, now);
+    }
 
-        VoiceProfile visibleProfile = voiceProfileFor(normalize(currentSpeaker));
-        speakerText.setText(
-                currentSpeaker.toUpperCase(Locale.GERMAN)
-                        + "  ·  "
-                        + voiceProfileLabel(visibleProfile)
-        );
-        recognizedText.setText(visibleStory);
+    private void applyAnalysis(RecognitionAnalysis analysis, long frameStartedAt,
+            FrameRelease release) {
+        try {
+            if (!acceptsFrame(analysisGeneration.get())) return;
+            long now = analysis.now;
+            if (analysis.confidenceCount > 0) {
+                int percent = Math.round(analysis.confidenceSum / analysis.confidenceCount * 100);
+                confidenceText.setText("OCR: " + percent + "%");
+                confidenceText.setVisibility(View.VISIBLE);
+            }
+            if (analysis.resultBlank) {
+                clearPendingStoryIfStale(now);
+                confidenceText.setVisibility(View.GONE);
+                return;
+            }
+            if (analysis.storyLines.isEmpty()) {
+                clearPendingStoryIfStale(now);
+                applySpeakerTheme(NARRATOR);
+                setReadableDialogue(null);
+                speakerText.setText("BEREIT");
+                recognizedText.setText("Warte auf Pokopia-Dialog …");
+                confidenceText.setVisibility(View.GONE);
+                if (ttsReady && speechQueue.size() == 0 && now >= nextCloudAttemptAt) {
+                    showStatus("Suche Text …", true);
+                }
+                return;
+            }
+            if (analysis.visibleStory.isBlank()) {
+                clearPendingStoryIfStale(now);
+                return;
+            }
+            updateSpeakerFromOcr(analysis.visibleStory, analysis.detectedSpeaker);
+            // Ohne Namenschild ist der Sprecher nicht sicher. Dann darf dieselbe
+            // Zeile nicht erneut starten, nur weil sie unter einem anderen Namen liegt.
+            boolean speakerUncertain = analysis.detectedSpeaker == null
+                    && normalize(currentSpeaker).equals(normalize(NARRATOR));
 
-        if (isNonStoryNotification(normalizedStory) || !TextRules.hasDialogueText(normalizedStory)) {
-            dialogueStability.reset();
-            earlyPrefixStability.reset();
-            setReadableDialogue(null);
-            speakerText.setText("SYSTEMMELDUNG");
-            if (ttsReady && speechQueue.size() == 0) showStatus("Ignoriert", true);
-            return;
-        }
+            speakerText.setText(
+                    currentSpeaker.toUpperCase(Locale.GERMAN)
+                            + "  ·  "
+                            + voiceProfileLabel(voiceProfileFor(normalize(currentSpeaker)))
+            );
+            recognizedText.setText(analysis.visibleStory);
 
-        setReadableDialogue(visibleStory);
-        boolean stable = dialogueStability.accept(visibleStory, now);
-        if (!ttsReady) return;
-        boolean idle = speechQueue.size() == 0;
-        if (cloudSpeechEnabled && storyAudioIndex.size() > 0 && !stable && !speakerTracker.waitForName()) {
-            String visibleFirstLine = DialogueText.withoutSpeaker(
-                    StoryTextAssembler.firstLine(assembledLines), detectedSpeaker);
-            if (earlyPrefixStability.accept(visibleFirstLine, now)) {
-                StoryAudioIndex.Match early = storyAudioIndex.matchEarlyPrefix(
-                        currentSpeaker, visibleFirstLine, speakerUncertain);
-                if (early != null && trySpeakStoryPack(early, speakerUncertain, frameStartedAt)) {
+            if (isNonStoryNotification(analysis.normalizedStory)
+                    || !TextRules.hasDialogueText(analysis.normalizedStory)) {
+                dialogueStability.reset();
+                earlyPrefixStability.reset();
+                setReadableDialogue(null);
+                speakerText.setText("SYSTEMMELDUNG");
+                if (ttsReady && speechQueue.size() == 0) showStatus("Ignoriert", true);
+                return;
+            }
+
+            setReadableDialogue(analysis.visibleStory);
+            boolean stable = dialogueStability.accept(analysis.visibleStory, now);
+            if (!ttsReady) return;
+            boolean idle = speechQueue.size() == 0;
+            if (cloudSpeechEnabled && storyAudioIndex.size() > 0 && !stable && !speakerTracker.waitForName()) {
+                if (earlyPrefixStability.accept(analysis.visibleFirstLine, now)) {
+                    StoryAudioIndex.Match early = storyAudioIndex.matchEarlyPrefix(
+                            currentSpeaker, analysis.visibleFirstLine, speakerUncertain);
+                    if (early != null && trySpeakStoryPack(early, speakerUncertain, frameStartedAt)) {
+                        return;
+                    }
+                }
+            }
+            if (!stable || speakerTracker.waitForName()) {
+                if (idle) showStatus("Prüfe Dialog …", true);
+                return;
+            }
+
+            if (interruptedDialogueKey != null) {
+                if (DialogueHistory.matches(interruptedDialogueKey, DialogueHistory.key(currentSpeaker, analysis.normalizedStory))) {
+                    if (idle) showInterruptedSpeech();
+                    return;
+                }
+                interruptedDialogueKey = null;
+            }
+
+            if (speakerUncertain
+                    ? dialogueHistory.wasSpokenAnywhere(analysis.normalizedStory)
+                    : dialogueHistory.wasSpoken(currentSpeaker, analysis.normalizedStory)) {
+                if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
+                return;
+            }
+
+            // Scroll-Erweiterungen warten auf onDone: erst dann ist der alte Teil wirklich gehört.
+            if (speakerUncertain
+                    ? dialogueHistory.awaitsOverlappingSpeechAnywhere(analysis.normalizedStory)
+                    : dialogueHistory.awaitsOverlappingSpeech(currentSpeaker, analysis.normalizedStory)) return;
+            String unread = speakerUncertain
+                    ? dialogueHistory.unreadTextAnywhere(analysis.visibleStory)
+                    : dialogueHistory.unreadText(currentSpeaker, analysis.visibleStory);
+            if (unread.isBlank()) {
+                if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
+                return;
+            }
+            if (cloudSpeechEnabled && storyAudioIndex.size() > 0) {
+                StoryAudioIndex.Match full = storyAudioIndex.matchFull(currentSpeaker, analysis.visibleStory, speakerUncertain);
+                if (full != null && TextRules.similarEnough(normalize(unread), full.entry.textNorm)) {
+                    String effectiveSpeaker = speakerUncertain ? full.entry.speaker : currentSpeaker;
+                    if (speechQueue.size() < MAX_QUEUED_UTTERANCES
+                            || !normalize(effectiveSpeaker).equals(cachedSpeaker)) {
+                        if (submitStoryPack(full, effectiveSpeaker)) {
+                            android.util.Log.d("PokopiaTts", "Story-Pack angenommen (Volltext), Frame bis Übergabe "
+                                    + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
+                        }
+                    }
                     return;
                 }
             }
-        }
-        if (!stable || speakerTracker.waitForName()) {
-            if (idle) showStatus("Prüfe Dialog …", true);
-            return;
-        }
+            if (waitingForCloudRetry(now)) return;
 
-        if (interruptedDialogueKey != null) {
-            if (DialogueHistory.matches(interruptedDialogueKey, DialogueHistory.key(currentSpeaker, normalizedStory))) {
-                if (idle) showInterruptedSpeech();
-                return;
+            // Neuen Dialog vollständig und flüssig sprechen
+            if (speechQueue.size() < MAX_QUEUED_UTTERANCES
+                    || !normalize(currentSpeaker).equals(cachedSpeaker)) {
+                if (!submitDialogue(unread, analysis.normalizedStory)) return;
+                android.util.Log.d("PokopiaTts", "Dialog angenommen, Frame bis Übergabe "
+                        + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
             }
-            interruptedDialogueKey = null;
+        } catch (RuntimeException error) {
+            android.util.Log.w("PokopiaTts", "Analyse-Apply fehlgeschlagen", error);
+            showStatus("Text konnte nicht verarbeitet werden – versuche erneut", false);
+        } finally {
+            release.close();
         }
+    }
 
-        if (speakerUncertain
-                ? dialogueHistory.wasSpokenAnywhere(normalizedStory)
-                : dialogueHistory.wasSpoken(currentSpeaker, normalizedStory)) {
-            if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
-            return;
-        }
+    private static final class RecognitionAnalysis {
+        final List<OcrLine> storyLines;
+        final String detectedSpeaker;
+        final String visibleStory;
+        final String visibleFirstLine;
+        final String normalizedStory;
+        final float confidenceSum;
+        final int confidenceCount;
+        final boolean resultBlank;
+        final long now;
 
-        // Scroll-Erweiterungen warten auf onDone: erst dann ist der alte Teil wirklich gehört.
-        if (speakerUncertain
-                ? dialogueHistory.awaitsOverlappingSpeechAnywhere(normalizedStory)
-                : dialogueHistory.awaitsOverlappingSpeech(currentSpeaker, normalizedStory)) return;
-        String unread = speakerUncertain
-                ? dialogueHistory.unreadTextAnywhere(visibleStory)
-                : dialogueHistory.unreadText(currentSpeaker, visibleStory);
-        if (unread.isBlank()) {
-            if (idle) showStatus("Bereits vorgelesen · zum Wiederholen tippen", true);
-            return;
-        }
-        if (cloudSpeechEnabled && storyAudioIndex.size() > 0) {
-            StoryAudioIndex.Match full = storyAudioIndex.matchFull(currentSpeaker, visibleStory, speakerUncertain);
-            if (full != null && TextRules.similarEnough(normalize(unread), full.entry.textNorm)) {
-                String effectiveSpeaker = speakerUncertain ? full.entry.speaker : currentSpeaker;
-                if (speechQueue.size() < MAX_QUEUED_UTTERANCES
-                        || !normalize(effectiveSpeaker).equals(cachedSpeaker)) {
-                    if (submitStoryPack(full, effectiveSpeaker)) {
-                        android.util.Log.d("PokopiaTts", "Story-Pack angenommen (Volltext), Frame bis Übergabe "
-                                + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
-                    }
-                }
-                return;
-            }
-        }
-        if (waitingForCloudRetry(now)) return;
-
-        // Neuen Dialog vollständig und flüssig sprechen
-        if (speechQueue.size() < MAX_QUEUED_UTTERANCES
-                || !normalize(currentSpeaker).equals(cachedSpeaker)) {
-            if (!submitDialogue(unread, normalizedStory)) return;
-            android.util.Log.d("PokopiaTts", "Dialog angenommen, Frame bis Übergabe "
-                    + (android.os.SystemClock.elapsedRealtime() - frameStartedAt) + " ms");
+        RecognitionAnalysis(List<OcrLine> storyLines, String detectedSpeaker, String visibleStory,
+                String visibleFirstLine, String normalizedStory, float confidenceSum,
+                int confidenceCount, boolean resultBlank, long now) {
+            this.storyLines = storyLines;
+            this.detectedSpeaker = detectedSpeaker;
+            this.visibleStory = visibleStory;
+            this.visibleFirstLine = visibleFirstLine;
+            this.normalizedStory = normalizedStory;
+            this.confidenceSum = confidenceSum;
+            this.confidenceCount = confidenceCount;
+            this.resultBlank = resultBlank;
+            this.now = now;
         }
     }
 
@@ -1285,7 +1358,8 @@ public class MainActivity extends AppCompatActivity {
     private boolean isInStoryRegion(Rect box, int frameWidth, int frameHeight) {
         if (box == null) return false;
         float centerX = box.centerX() / (float) frameWidth;
-        return BubbleAppearance.inDialogueRegion(centerX, box.centerY() / (float) frameHeight);
+        float centerY = box.centerY() / (float) frameHeight;
+        return gameProfile.inZone(centerX, centerY);
     }
 
 
@@ -1874,6 +1948,7 @@ public class MainActivity extends AppCompatActivity {
         if (textToSpeech != null) textToSpeech.shutdown();
         if (textRecognizer != null && !ocrBusy.get()) textRecognizer.close();
         if (cameraExecutor != null) cameraExecutor.shutdown();
+        if (analysisExecutor != null) analysisExecutor.shutdownNow();
         if (toneGenerator != null) {
             toneGenerator.release();
             toneGenerator = null;
